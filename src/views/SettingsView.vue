@@ -155,8 +155,10 @@ function openRepo() {
 </template>
 
 <style scoped>
+/* 滚动容器必须占满内容区（否则滚动条停在 max-width 处而非窗口右缘） */
 .settings-page {
-  max-width: 860px;
+  width: 100%;
+  max-width: none;
 }
 
 .settings-section {
