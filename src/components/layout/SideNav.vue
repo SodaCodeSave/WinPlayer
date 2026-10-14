@@ -1,35 +1,86 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ContentDialog } from "winuionweb";
+import { ContentDialog, TextBox } from "winuionweb";
 import { useLibraryStore } from "@/stores/library";
 
 const router = useRouter();
 const route = useRoute();
 const library = useLibraryStore();
 
-const createDialogOpen = ref(false);
+/** ContentDialog 通过 ShowAsync() 打开（库没有 IsOpen prop） */
+interface DialogRef {
+  ShowAsync: () => Promise<string>;
+}
+const createDialogRef = ref<DialogRef | null>(null);
 const newPlaylistName = ref("");
 const newPlaylistDescription = ref("");
 
-function isActive(name: string): boolean {
-  return route.name === name;
-}
-
-async function confirmCreate() {
-  const playlist = await library.createPlaylist(newPlaylistName.value, newPlaylistDescription.value);
-  createDialogOpen.value = false;
+async function openCreateDialog() {
   newPlaylistName.value = "";
   newPlaylistDescription.value = "";
+  const result = await createDialogRef.value?.ShowAsync();
+  if (result !== "Primary") return;
+  const playlist = await library.createPlaylist(newPlaylistName.value, newPlaylistDescription.value);
   if (playlist) {
     void router.push({ name: "playlist", params: { id: playlist.id } });
   }
+}
+
+/* 滑动选中药丸（WinUI NavigationView 风格） */
+const scrollPill = ref({ top: 0, visible: false });
+const footerPill = ref({ top: 0, visible: false });
+const pillsReady = ref(false);
+
+function updatePill(container: Element | null, pill: typeof scrollPill): void {
+  if (!container) return;
+  const active = container.querySelector<HTMLElement>(".nav-item.active");
+  if (!active) {
+    pill.value.visible = false;
+    return;
+  }
+  pill.value = { top: active.offsetTop, visible: true };
+}
+
+function updatePills(): void {
+  updatePill(document.querySelector(".sidenav-scroll"), scrollPill);
+  updatePill(document.querySelector(".nav-footer"), footerPill);
+}
+
+function pillStyle(pill: { top: number; visible: boolean }) {
+  return {
+    top: `${pill.top}px`,
+    opacity: pill.visible ? "1" : "0",
+    transition: pillsReady.value ? undefined : "none",
+  };
+}
+
+onMounted(() => {
+  void nextTick(() => {
+    updatePills();
+    requestAnimationFrame(() => {
+      pillsReady.value = true;
+    });
+  });
+});
+
+watch(
+  () => [route.fullPath, library.playlists.length],
+  async () => {
+    await nextTick();
+    updatePills();
+  },
+);
+
+function isActive(name: string): boolean {
+  return route.name === name;
 }
 </script>
 
 <template>
   <nav class="sidenav">
     <div class="sidenav-scroll">
+      <span class="nav-pill" :style="pillStyle(scrollPill)" aria-hidden="true" />
       <ul class="nav-list">
         <li>
           <router-link :to="{ name: 'recommend' }" class="nav-item" :class="{ active: isActive('recommend') }">
@@ -48,7 +99,7 @@ async function confirmCreate() {
 
       <div class="nav-section-header">
         <span class="nav-section-title">歌单</span>
-        <button class="add-button" title="新建歌单" @click="createDialogOpen = true">
+        <button class="add-button" title="新建歌单" @click="openCreateDialog">
           <span class="wp-icon">&#xE710;</span>
         </button>
       </div>
@@ -70,6 +121,7 @@ async function confirmCreate() {
     </div>
 
     <div class="nav-footer">
+      <span class="nav-pill" :style="pillStyle(footerPill)" aria-hidden="true" />
       <ul class="nav-list">
         <li>
           <router-link :to="{ name: 'plugins' }" class="nav-item" :class="{ active: isActive('plugins') }">
@@ -87,27 +139,23 @@ async function confirmCreate() {
     </div>
 
     <ContentDialog
-      :IsOpen="createDialogOpen"
+      ref="createDialogRef"
       Title="新建歌单"
       PrimaryButtonText="创建"
       CloseButtonText="取消"
-      @PrimaryButtonClick="confirmCreate"
-      @CloseButtonClick="createDialogOpen = false"
     >
       <div class="dialog-form">
-        <input
-          v-model="newPlaylistName"
-          class="dialog-input"
-          type="text"
-          placeholder="歌单名称"
-          maxlength="50"
+        <TextBox
+          :Text="newPlaylistName"
+          PlaceholderText="歌单名称"
+          :MaxLength="50"
+          @update:Text="newPlaylistName = String($event ?? '')"
         />
-        <input
-          v-model="newPlaylistDescription"
-          class="dialog-input"
-          type="text"
-          placeholder="歌单简介（可选）"
-          maxlength="200"
+        <TextBox
+          :Text="newPlaylistDescription"
+          PlaceholderText="歌单简介（可选）"
+          :MaxLength="200"
+          @update:Text="newPlaylistDescription = String($event ?? '')"
         />
       </div>
     </ContentDialog>
@@ -127,6 +175,7 @@ async function confirmCreate() {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  position: relative;
 }
 
 .nav-list {
@@ -149,32 +198,48 @@ async function confirmCreate() {
   font-size: 14px;
   text-decoration: none;
   position: relative;
-  transition: background var(--duration-fast) var(--ease-standard);
+  z-index: 1;
+  transition: color var(--duration-fast) var(--ease-standard);
 }
 
 .nav-item:hover {
-  background: var(--wp-card-hover);
+  color: var(--wp-text-primary);
   text-decoration: none;
 }
 
-.nav-item:active {
+/* 选中药丸：在两个容器（滚动区/底栏）内滑动切换，由 JS 定位 top */
+.nav-pill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 36px;
+  border-radius: var(--radius-sm);
   background: var(--wp-card-active);
+  z-index: 0;
+  pointer-events: none;
+  transition:
+    top 300ms cubic-bezier(0.1, 0.9, 0.2, 1),
+    opacity 200ms var(--ease-standard);
 }
 
-.nav-item.active {
-  background: var(--wp-card-active);
+.nav-footer {
+  flex: none;
+  position: relative;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--wp-divider);
 }
 
+/* 左侧强调色小条（静态，不参与动画；动画只有选中药丸滑动） */
 .nav-item.active::before {
   content: "";
   position: absolute;
   left: 0;
   top: 50%;
-  transform: translateY(-50%);
   width: 3px;
   height: 16px;
   border-radius: 2px;
   background: var(--wp-accent);
+  transform: translateY(-50%);
 }
 
 .nav-icon {
@@ -240,35 +305,10 @@ async function confirmCreate() {
   color: var(--wp-text-tertiary);
 }
 
-.nav-footer {
-  flex: none;
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--wp-divider);
-}
-
 .dialog-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
   padding: var(--space-md) 0;
-}
-
-.dialog-input {
-  height: 32px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--wp-control-stroke-secondary);
-  border-bottom-color: var(--wp-control-stroke-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--wp-control-fill);
-  color: var(--wp-text-primary);
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  user-select: text;
-}
-
-.dialog-input:focus {
-  background: var(--wp-layer-solid);
-  border-bottom: 2px solid var(--wp-accent);
 }
 </style>

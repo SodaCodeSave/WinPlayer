@@ -17,6 +17,15 @@ interface PendingInvoke {
   timer: number;
 }
 
+/**
+ * postMessage 要求可结构化克隆的数据；Vue 响应式对象（Proxy）不可克隆，
+ * 统一经 JSON 深拷贝转为纯数据后再发给 Worker。
+ */
+function toCloneable<T>(value: T): T {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 async function proxyHttp(payload: PluginRequest): Promise<PluginResponse> {
   const result = await httpFetch({
     url: payload.url,
@@ -80,7 +89,7 @@ export class PluginHost {
     }, INIT_TIMEOUT_MS);
     void initPromise.finally(() => window.clearTimeout(initTimer));
 
-    this.post({ type: "init", code, pluginId: entry.id, settings });
+    this.post({ type: "init", code, pluginId: entry.id, settings: toCloneable(settings) });
     // 初始化结果在 onMessage 中兑现
     this.ready = initPromise;
   }
@@ -108,7 +117,7 @@ export class PluginHost {
         reject,
         timer,
       });
-      this.post({ type: "invoke", id, method, args });
+      this.post({ type: "invoke", id, method, args: toCloneable(args) });
     });
   }
 

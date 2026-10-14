@@ -4,6 +4,8 @@
 
 **一款遵循 WinUI 设计规范、基于 Tauri 2 构建、以插件驱动播放源的桌面音乐播放器**
 
+> 这是一坨完全由AI产出的屎山，放在Github纯粹为了方便自己下载
+
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB)
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883)

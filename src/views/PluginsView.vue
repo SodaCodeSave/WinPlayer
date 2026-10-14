@@ -1,24 +1,35 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { usePluginsStore, type PluginRecord } from "@/stores/plugins";
 import { useSettingsStore } from "@/stores/settings";
 import { toast } from "@/services/toast";
 import EmptyState from "@/components/common/EmptyState.vue";
-import { ContentDialog, ToggleSwitch } from "winuionweb";
+import { ComboBox, ContentDialog, NumberBox, PasswordBox, TextBox, ToggleSwitch } from "winuionweb";
 import type { MarketEntry, PluginSettingItem } from "@/types/plugin";
 
 const plugins = usePluginsStore();
 const settings = useSettingsStore();
 
 const tab = ref<"installed" | "market">("installed");
-const urlDialogOpen = ref(false);
 const urlValue = ref("");
-const installingUrl = ref(false);
 const marketLoading = ref(false);
 const marketEntries = ref<MarketEntry[]>([]);
+const uninstallTarget = ref<PluginRecord | null>(null);
+
+/** ContentDialog 通过 ShowAsync() 打开（库没有 IsOpen prop） */
+interface DialogRef {
+  ShowAsync: () => Promise<string>;
+}
+const urlDialogRef = ref<DialogRef | null>(null);
+const uninstallDialogRef = ref<DialogRef | null>(null);
 
 const installedCount = computed(() => plugins.records.length);
+
+/** 插件设置的编辑草稿（避免每敲一个字就重建插件运行时） */
+const drafts = ref<Record<string, unknown>>({});
+const draftTimers = new Map<string, number>();
+const DRAFT_DEBOUNCE_MS = 600;
 
 function capabilityLabel(capability: string): string {
   const map: Record<string, string> = {
@@ -32,51 +43,94 @@ function capabilityLabel(capability: string): string {
   return map[capability] ?? capability;
 }
 
+function draftKey(record: PluginRecord, item: PluginSettingItem): string {
+  return `${record.entry.id}:${item.key}`;
+}
+
+function storedValue(record: PluginRecord, item: PluginSettingItem): string | number | boolean {
+  const value = record.settings[item.key];
+  if (item.type === "switch") return Boolean(value);
+  if (item.type === "number") return Number(value ?? item.default ?? 0);
+  return value === undefined || value === null ? "" : String(value);
+}
+
+function draftValue(record: PluginRecord, item: PluginSettingItem): string | number | boolean {
+  const key = draftKey(record, item);
+  return key in drafts.value
+    ? (drafts.value[key] as string | number | boolean)
+    : storedValue(record, item);
+}
+
+/** 更新草稿并防抖持久化（持久化会重建插件 Worker，不能每键触发） */
+function setDraft(record: PluginRecord, item: PluginSettingItem, value: unknown): void {
+  const key = draftKey(record, item);
+  drafts.value[key] = value;
+  const timer = draftTimers.get(key);
+  if (timer) window.clearTimeout(timer);
+  draftTimers.set(
+    key,
+    window.setTimeout(() => {
+      draftTimers.delete(key);
+      if (record.settings[item.key] === value) return;
+      void plugins.updateSettings(record.entry.id, { ...record.settings, [item.key]: value });
+    }, DRAFT_DEBOUNCE_MS),
+  );
+}
+
+/** 开关类设置立即生效 */
+function setSwitch(record: PluginRecord, item: PluginSettingItem, value: boolean): void {
+  const key = draftKey(record, item);
+  drafts.value[key] = value;
+  void plugins.updateSettings(record.entry.id, { ...record.settings, [item.key]: value });
+}
+
+/* select 类型：ComboBox 用标签展示，写回值 */
+function selectLabels(item: PluginSettingItem): string[] {
+  return (item.options ?? []).map((option) => option.label);
+}
+
+function selectIndex(record: PluginRecord, item: PluginSettingItem): number {
+  const current = String(draftValue(record, item));
+  return (item.options ?? []).findIndex((option) => option.value === current);
+}
+
+function onSelectChange(
+  record: PluginRecord,
+  item: PluginSettingItem,
+  ...args: unknown[]
+): void {
+  const payload = args[1];
+  const added = (payload as { AddedItems?: unknown[] } | undefined)?.AddedItems;
+  const label = String(added?.[0] ?? "");
+  const option = (item.options ?? []).find((entry) => entry.label === label);
+  if (option) setDraft(record, item, option.value);
+}
+
 async function installFromFile() {
   await plugins.installFromDialog();
 }
 
-async function confirmInstallFromUrl() {
+async function openUrlDialog() {
+  urlValue.value = "";
+  const result = await urlDialogRef.value?.ShowAsync();
+  if (result !== "Primary") return;
   const url = urlValue.value.trim();
-  if (!url) return;
-  installingUrl.value = true;
-  try {
-    const ok = await plugins.installFromUrl(url);
-    if (ok) {
-      urlDialogOpen.value = false;
-      urlValue.value = "";
-    }
-  } finally {
-    installingUrl.value = false;
+  if (!url) {
+    toast("请输入插件地址", "error");
+    return;
   }
+  await plugins.installFromUrl(url);
 }
 
 async function confirmUninstall(record: PluginRecord) {
-  if (!window.confirm(`确定要卸载插件「${record.entry.manifest.name}」吗？`)) return;
-  await plugins.uninstall(record.entry.id);
+  uninstallTarget.value = record;
+  const result = await uninstallDialogRef.value?.ShowAsync();
+  uninstallTarget.value = null;
+  if (result === "Primary") await plugins.uninstall(record.entry.id);
 }
 
-function onToggle(record: PluginRecord, event: Event) {
-  const enabled = (event.target as HTMLInputElement).checked;
-  void plugins.togglePlugin(record.entry.id, enabled);
-}
-
-/** 设置表单取值 */
-function settingValue(record: PluginRecord, item: PluginSettingItem): string | boolean {
-  const value = record.settings[item.key];
-  if (item.type === "switch") return Boolean(value);
-  return value === undefined || value === null ? "" : String(value);
-}
-
-function saveSetting(record: PluginRecord, item: PluginSettingItem, rawValue: string | boolean) {
-  let value: string | number | boolean = rawValue;
-  if (item.type === "number") {
-    const parsed = Number(rawValue);
-    value = Number.isFinite(parsed) ? parsed : 0;
-  } else if (item.type === "switch") {
-    value = Boolean(rawValue);
-  }
-  void plugins.updateSettings(record.entry.id, { ...record.settings, [item.key]: value });
+function onToggle(record: PluginRecord, event: { IsOn: boolean }): void {
+  void plugins.togglePlugin(record.entry.id, Boolean(event?.IsOn));
 }
 
 async function loadMarket() {
@@ -105,6 +159,11 @@ onMounted(async () => {
   if (!plugins.records.length && !plugins.loading) await plugins.loadInstalled();
   await loadMarket();
 });
+
+onUnmounted(() => {
+  for (const timer of draftTimers.values()) window.clearTimeout(timer);
+  draftTimers.clear();
+});
 </script>
 
 <template>
@@ -124,7 +183,7 @@ onMounted(async () => {
         <button class="wp-standard-button small" @click="installFromFile">
           <span class="wp-icon">&#xE7B8;</span>从本地安装
         </button>
-        <button class="wp-standard-button small" @click="urlDialogOpen = true">
+        <button class="wp-standard-button small" @click="openUrlDialog">
           <span class="wp-icon">&#xE774;</span>从 URL 安装
         </button>
       </div>
@@ -169,48 +228,53 @@ onMounted(async () => {
           </div>
 
           <div class="plugin-side">
-            <ToggleSwitch
-              :IsOn="record.enabled"
-              :IsEnabled="true"
-              @change="onToggle(record, $event)"
-            />
+            <ToggleSwitch :IsOn="record.enabled" @Toggled="onToggle(record, $event)" />
             <button class="wp-standard-button small danger" @click="confirmUninstall(record)">
               卸载
             </button>
           </div>
 
           <!-- 插件设置表单 -->
-          <div v-if="record.enabled && record.entry.manifest.settings?.length" class="plugin-settings">
+          <div v-if="record.entry.manifest.settings?.length" class="plugin-settings">
             <div v-for="item in record.entry.manifest.settings" :key="item.key" class="setting-row">
               <div class="setting-label">
                 <div class="setting-name">{{ item.label }}</div>
                 <div v-if="item.description" class="setting-desc">{{ item.description }}</div>
               </div>
-              <input
-                v-if="item.type === 'text' || item.type === 'password' || item.type === 'number'"
-                class="setting-input"
-                :type="item.type === 'password' ? 'password' : item.type === 'number' ? 'number' : 'text'"
-                :value="settingValue(record, item) as string"
-                :placeholder="item.placeholder"
-                @change="saveSetting(record, item, ($event.target as HTMLInputElement).value)"
+              <TextBox
+                v-if="item.type === 'text'"
+                class="setting-control"
+                :Text="String(draftValue(record, item))"
+                :PlaceholderText="item.placeholder ?? ''"
+                @update:Text="setDraft(record, item, $event)"
               />
-              <select
+              <PasswordBox
+                v-else-if="item.type === 'password'"
+                class="setting-control"
+                :Password="String(draftValue(record, item))"
+                :PlaceholderText="item.placeholder ?? ''"
+                @update:Password="setDraft(record, item, $event)"
+              />
+              <NumberBox
+                v-else-if="item.type === 'number'"
+                class="setting-control"
+                :Value="Number(draftValue(record, item)) || 0"
+                @update:Value="setDraft(record, item, $event)"
+              />
+              <ComboBox
                 v-else-if="item.type === 'select'"
-                class="setting-input"
-                :value="settingValue(record, item) as string"
-                @change="saveSetting(record, item, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="option in item.options ?? []" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-              <label v-else-if="item.type === 'switch'" class="setting-switch">
-                <input
-                  type="checkbox"
-                  :checked="settingValue(record, item) as boolean"
-                  @change="saveSetting(record, item, ($event.target as HTMLInputElement).checked)"
-                />
-              </label>
+                class="setting-control"
+                :ItemsSource="selectLabels(item)"
+                :SelectedIndex="selectIndex(record, item)"
+                @SelectionChanged="
+                  (sender: unknown, payload: unknown) => onSelectChange(record, item, sender, payload)
+                "
+              />
+              <ToggleSwitch
+                v-else-if="item.type === 'switch'"
+                :IsOn="Boolean(draftValue(record, item))"
+                @Toggled="setSwitch(record, item, Boolean($event?.IsOn))"
+              />
             </div>
           </div>
         </div>
@@ -268,23 +332,28 @@ onMounted(async () => {
     </template>
 
     <ContentDialog
-      :IsOpen="urlDialogOpen"
+      ref="urlDialogRef"
       Title="从 URL 安装插件"
       PrimaryButtonText="安装"
       CloseButtonText="取消"
-      @PrimaryButtonClick="confirmInstallFromUrl"
-      @CloseButtonClick="urlDialogOpen = false"
     >
       <div class="dialog-form">
-        <input
-          v-model="urlValue"
-          class="dialog-input"
-          type="text"
-          placeholder="https://example.com/my-plugin.zip"
+        <TextBox
+          :Text="urlValue"
+          PlaceholderText="https://example.com/my-plugin.zip"
+          @update:Text="urlValue = String($event ?? '')"
         />
         <div class="dialog-hint">支持 .zip 插件包或单文件 .json 插件的直链地址</div>
-        <div v-if="installingUrl" class="dialog-hint">正在下载安装…</div>
       </div>
+    </ContentDialog>
+
+    <ContentDialog
+      ref="uninstallDialogRef"
+      :Title="`卸载插件「${uninstallTarget?.entry.manifest.name ?? ''}」`"
+      PrimaryButtonText="卸载"
+      CloseButtonText="取消"
+    >
+      <div class="dialog-hint">卸载后将删除插件本体与其存储的数据，此操作不可撤销。</div>
     </ContentDialog>
   </div>
 </template>
@@ -360,9 +429,15 @@ onMounted(async () => {
   gap: var(--space-lg);
 }
 
+/**
+ * 卡片使用两列网格：主信息占第一列，开关/操作占第二列，
+ * 设置表单独占整行（此前用 flex + flex-basis:100% 会被挤进同一行导致排版错乱）
+ */
 .plugin-card {
-  display: flex;
-  gap: var(--space-xl);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: start;
+  gap: var(--space-lg) var(--space-xl);
   padding: var(--space-xl);
   background: var(--wp-card);
   border: 1px solid var(--wp-control-stroke);
@@ -370,7 +445,6 @@ onMounted(async () => {
 }
 
 .plugin-main {
-  flex: 1;
   min-width: 0;
 }
 
@@ -439,11 +513,10 @@ onMounted(async () => {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--space-md);
-  flex: none;
 }
 
 .plugin-settings {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   border-top: 1px solid var(--wp-divider);
   padding-top: var(--space-lg);
   display: flex;
@@ -473,22 +546,9 @@ onMounted(async () => {
   margin-top: 2px;
 }
 
-.setting-input {
+.setting-control {
   width: 280px;
-  height: 32px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--wp-control-stroke-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--wp-control-fill);
-  color: var(--wp-text-primary);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-}
-
-.setting-input:focus {
-  background: var(--wp-layer-solid);
-  border-bottom: 2px solid var(--wp-accent);
+  flex: none;
 }
 
 .market-toolbar {
@@ -512,19 +572,6 @@ onMounted(async () => {
   flex-direction: column;
   gap: var(--space-md);
   padding: var(--space-md) 0;
-}
-
-.dialog-input {
-  height: 32px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--wp-control-stroke-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--wp-control-fill);
-  color: var(--wp-text-primary);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  user-select: text;
 }
 
 .dialog-hint {

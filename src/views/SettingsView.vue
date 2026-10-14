@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { ComboBox, TextBox } from "winuionweb";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings";
 import { toast } from "@/services/toast";
 import type { MarketSource } from "@/types/plugin";
@@ -16,9 +17,20 @@ const THEME_OPTIONS: Array<{ label: string; value: ThemePreference }> = [
   { label: "深色", value: "dark" },
 ];
 
-function onThemeChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as ThemePreference;
-  void settings.setTheme(value);
+const themeLabels = computed(() => THEME_OPTIONS.map((option) => option.label));
+
+const themeIndex = computed(() =>
+  THEME_OPTIONS.findIndex((option) => option.value === settings.theme),
+);
+
+/**
+ * winuionweb 的 SelectionChanged 签名为 (sender, payload)，
+ * payload 中的 AddedItems 才是新选中的值。
+ */
+function onThemeChange(_sender: unknown, payload?: { AddedItems?: unknown[] }): void {
+  const label = String(payload?.AddedItems?.[0] ?? "");
+  const option = THEME_OPTIONS.find((entry) => entry.label === label);
+  if (option && option.value !== settings.theme) void settings.setTheme(option.value);
 }
 
 function addSource() {
@@ -58,11 +70,12 @@ function openRepo() {
           <div class="card-header">主题</div>
           <div class="card-description">选择应用的亮/暗外观，默认跟随 Windows 系统设置</div>
         </div>
-        <select class="card-control" :value="settings.theme" @change="onThemeChange">
-          <option v-for="option in THEME_OPTIONS" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
+        <ComboBox
+          class="card-control"
+          :ItemsSource="themeLabels"
+          :SelectedIndex="themeIndex"
+          @SelectionChanged="onThemeChange"
+        />
       </div>
     </section>
 
@@ -89,12 +102,17 @@ function openRepo() {
         <div v-else class="source-empty">还没有添加市场源</div>
 
         <div class="source-add">
-          <input v-model="newSourceName" class="source-input" type="text" placeholder="名称（可选）" />
-          <input
-            v-model="newSourceUrl"
+          <TextBox
+            class="source-input"
+            :Text="newSourceName"
+            PlaceholderText="名称（可选）"
+            @update:Text="newSourceName = String($event ?? '')"
+          />
+          <TextBox
             class="source-input grow"
-            type="text"
-            placeholder="https://example.com/market-index.json"
+            :Text="newSourceUrl"
+            PlaceholderText="https://example.com/market-index.json"
+            @update:Text="newSourceUrl = String($event ?? '')"
           />
           <button class="wp-standard-button small" @click="addSource">添加</button>
         </div>
@@ -194,15 +212,7 @@ function openRepo() {
 
 .card-control {
   width: 160px;
-  height: 32px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--wp-control-stroke-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--wp-control-fill);
-  color: var(--wp-text-primary);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
+  flex: none;
 }
 
 .source-list {
@@ -253,20 +263,13 @@ function openRepo() {
 
 .source-input {
   width: 180px;
-  height: 32px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--wp-control-stroke-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--wp-control-fill);
-  color: var(--wp-text-primary);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
+  flex: none;
 }
 
 .source-input.grow {
   flex: 1;
   width: auto;
+  min-width: 0;
 }
 
 .small {

@@ -85,9 +85,7 @@
 
 /* ------------------------------ 暗色主题 ------------------------------ */
 /* 手动锁定暗色 */
-:root[data-theme="dark"],
-/* 跟随系统且系统为暗色 */
-:root:not([data-theme="light"]) {
+:root[data-theme="dark"] {
   color-scheme: dark;
 }
 
@@ -131,6 +129,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
     --wp-accent: #4cc2ff;
     --wp-accent-hover: #47b1eb;
     --wp-accent-active: #42a2d9;

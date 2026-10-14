@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ContentDialog } from "winuionweb";
+import { ContentDialog, TextBox } from "winuionweb";
 import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
 import SongTable from "@/components/common/SongTable.vue";
@@ -16,9 +16,14 @@ const player = usePlayerStore();
 const playlistId = ref<number>(0);
 const tracks = ref<UnifiedTrack[]>([]);
 const loading = ref(false);
-const renameOpen = ref(false);
-const deleteOpen = ref(false);
 const renameValue = ref("");
+
+/** ContentDialog 通过 ShowAsync() 打开（库没有 IsOpen prop） */
+interface DialogRef {
+  ShowAsync: () => Promise<string>;
+}
+const renameDialogRef = ref<DialogRef | null>(null);
+const deleteDialogRef = ref<DialogRef | null>(null);
 
 const playlist = () => library.playlists.find((item) => item.id === playlistId.value);
 
@@ -54,18 +59,16 @@ async function onRemove(track: UnifiedTrack) {
   await load(playlistId.value);
 }
 
-function openRename() {
+async function openRename() {
   renameValue.value = playlist()?.name ?? "";
-  renameOpen.value = true;
-}
-
-async function confirmRename() {
+  const result = await renameDialogRef.value?.ShowAsync();
+  if (result !== "Primary") return;
   await library.renamePlaylist(playlistId.value, renameValue.value);
-  renameOpen.value = false;
 }
 
-async function confirmDelete() {
-  deleteOpen.value = false;
+async function openDelete() {
+  const result = await deleteDialogRef.value?.ShowAsync();
+  if (result !== "Primary") return;
   await library.deletePlaylist(playlistId.value);
   void router.replace("/liked");
 }
@@ -93,7 +96,7 @@ onMounted(() => {
             <button class="wp-standard-button small" @click="openRename">
               <span class="wp-icon">&#xE70F;</span>重命名
             </button>
-            <button class="wp-standard-button small danger" @click="deleteOpen = true">
+            <button class="wp-standard-button small danger" @click="openDelete">
               <span class="wp-icon">&#xE74D;</span>删除歌单
             </button>
           </div>
@@ -116,24 +119,27 @@ onMounted(() => {
     </template>
 
     <ContentDialog
-      :IsOpen="renameOpen"
+      ref="renameDialogRef"
       Title="重命名歌单"
       PrimaryButtonText="保存"
       CloseButtonText="取消"
-      @PrimaryButtonClick="confirmRename"
-      @CloseButtonClick="renameOpen = false"
     >
-      <input v-model="renameValue" class="dialog-input" type="text" maxlength="50" />
+      <div class="dialog-form">
+        <TextBox
+          :Text="renameValue"
+          PlaceholderText="歌单名称"
+          :MaxLength="50"
+          @update:Text="renameValue = String($event ?? '')"
+        />
+      </div>
     </ContentDialog>
 
     <ContentDialog
-      :IsOpen="deleteOpen"
+      ref="deleteDialogRef"
       Title="删除歌单"
       Content="删除后无法恢复，确定要删除这个歌单吗？"
       PrimaryButtonText="删除"
       CloseButtonText="取消"
-      @PrimaryButtonClick="confirmDelete"
-      @CloseButtonClick="deleteOpen = false"
     />
   </div>
 </template>
@@ -188,22 +194,7 @@ onMounted(() => {
   gap: var(--space-md);
 }
 
-.dialog-input {
-  width: 100%;
-  height: 32px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--wp-control-stroke-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--wp-control-fill);
-  color: var(--wp-text-primary);
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  user-select: text;
-}
-
-.dialog-input:focus {
-  background: var(--wp-layer-solid);
-  border-bottom: 2px solid var(--wp-accent);
+.dialog-form {
+  padding: var(--space-md) 0;
 }
 </style>
