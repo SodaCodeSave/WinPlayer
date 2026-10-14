@@ -55,12 +55,19 @@ function pillStyle(pill: { top: number; visible: boolean }) {
   };
 }
 
+/** 解除初始定位的 transition:none。
+ * rAF 在页面不可见（窗口最小化/被完全遮挡）时不会触发，会导致
+ * transition:none 永久残留、导航时药丸瞬移，故加 setTimeout 兜底。 */
+function markPillsReady(): void {
+  if (pillsReady.value) return;
+  pillsReady.value = true;
+}
+
 onMounted(() => {
   void nextTick(() => {
     updatePills();
-    requestAnimationFrame(() => {
-      pillsReady.value = true;
-    });
+    requestAnimationFrame(markPillsReady);
+    window.setTimeout(markPillsReady, 320);
   });
 });
 
