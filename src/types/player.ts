@@ -1,0 +1,58 @@
+import type { UnifiedTrack } from "./plugin";
+
+/** 播放模式 */
+export type PlayMode = "sequential" | "loop-all" | "loop-one" | "shuffle";
+
+export const PLAY_MODE_LABEL: Record<PlayMode, string> = {
+  sequential: "顺序播放",
+  "loop-all": "列表循环",
+  "loop-one": "单曲循环",
+  shuffle: "随机播放",
+};
+
+/** 播放队列条目 */
+export interface QueueItem {
+  /** 队列内唯一标识（同曲目可重复入队） */
+  uid: string;
+  track: UnifiedTrack;
+}
+
+/** 歌词行 */
+export interface LyricLine {
+  /** 时间（毫秒） */
+  time: number;
+  text: string;
+}
+
+let uidCounter = 0;
+
+/** 生成队列条目唯一 ID */
+export function createQueueUid(): string {
+  uidCounter += 1;
+  return `${Date.now().toString(36)}-${uidCounter}`;
+}
+
+/** 格式化毫秒为 m:ss */
+export function formatDuration(ms?: number): string {
+  if (!ms || ms < 0 || !Number.isFinite(ms)) return "--:--";
+  const total = Math.floor(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/** 格式化秒为 m:ss（用于播放进度） */
+export function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const total = Math.floor(seconds);
+  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, "0")}`;
+}
+
+/** 曲目显示名：歌名 - 艺术家 */
+export function trackTitle(track: UnifiedTrack): string {
+  return track.name || "未知歌曲";
+}
+
+export function trackArtist(track: UnifiedTrack): string {
+  return track.artists?.length ? track.artists.join(" / ") : "未知艺术家";
+}

@@ -1,0 +1,14 @@
+{
+  "name": "WinPlayer 官方示例市场（占位）",
+  "plugins": [
+    {
+      "id": "com.winplayer.demo",
+      "name": "示例音源（Demo）",
+      "version": "1.0.0",
+      "description": "演示 WinPlayer 插件协议的示例播放源，使用公开的测试音频，仅供开发调试，不提供任何真实音乐内容。",
+      "author": "WinPlayer",
+      "url": "https://example.com/plugins/demo-source-1.0.0.json",
+      "homepage": "https://github.com/your-name/WinPlayer"
+    }
+  ]
+}

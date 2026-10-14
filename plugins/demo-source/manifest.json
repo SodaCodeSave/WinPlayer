@@ -1,0 +1,35 @@
+{
+  "id": "com.winplayer.demo",
+  "name": "示例音源（Demo）",
+  "version": "1.0.0",
+  "description": "演示 WinPlayer 插件协议的示例播放源，使用公开的测试音频，仅供开发调试，不提供任何真实音乐内容。",
+  "author": "WinPlayer",
+  "homepage": "https://github.com/your-name/WinPlayer",
+  "main": "main.js",
+  "apiVersion": 1,
+  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords"],
+  "settings": [
+    {
+      "key": "greeting",
+      "label": "问候语前缀",
+      "type": "text",
+      "default": "你好",
+      "placeholder": "用于日志输出",
+      "description": "演示插件设置项：修改后可在控制台日志中看到效果"
+    },
+    {
+      "key": "maxResults",
+      "label": "最大返回数量",
+      "type": "number",
+      "default": 12,
+      "description": "搜索/推荐返回的歌曲数量上限"
+    },
+    {
+      "key": "enableLyrics",
+      "label": "启用歌词",
+      "type": "switch",
+      "default": true,
+      "description": "关闭后 getLyrics 返回空"
+    }
+  ]
+}

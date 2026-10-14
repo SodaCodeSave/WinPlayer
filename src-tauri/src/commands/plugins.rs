@@ -1,0 +1,408 @@
+//! 插件包管理：安装（本地目录 / zip / 单文件 JSON / URL）、列出、读取代码、删除，
+//! 以及每个插件的私有键值存储。
+
+use base64::Engine;
+use rand::Rng;
+use serde::Serialize;
+use serde_json::Value;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use tauri::Manager;
+
+/// 已安装插件条目（前端据此驱动插件管理 UI）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEntry {
+    pub id: String,
+    pub manifest: Value,
+    /// "dir" = 目录型插件（manifest.json + 入口 JS）；"file" = 单文件 JSON 插件
+    pub kind: String,
+}
+
+fn plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?
+        .join("plugins");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建插件目录失败: {e}"))?;
+    Ok(dir)
+}
+
+fn storage_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?
+        .join("plugin_storage");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建插件存储目录失败: {e}"))?;
+    Ok(dir)
+}
+
+/// 插件 ID 仅允许 [a-z0-9._-]，防止路径穿越
+fn validate_plugin_id(id: &str) -> Result<(), String> {
+    let valid = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | '_'));
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("非法插件 ID: {id}"))
+    }
+}
+
+fn read_manifest(dir: &Path) -> Result<Value, String> {
+    let path = dir.join("manifest.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取 manifest.json 失败: {e}"))?;
+    let manifest: Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析 manifest.json 失败: {e}"))?;
+    let id = manifest
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or("manifest.json 缺少 id 字段")?;
+    validate_plugin_id(id)?;
+    if manifest.get("name").and_then(|v| v.as_str()).is_none() {
+        return Err("manifest.json 缺少 name 字段".into());
+    }
+    if manifest.get("apiVersion").and_then(|v| v.as_u64()).unwrap_or(0) < 1 {
+        return Err("manifest.json 缺少或过低的 apiVersion 字段（当前支持 1）".into());
+    }
+    Ok(manifest)
+}
+
+/// 列出所有已安装插件
+#[tauri::command]
+pub fn plugin_list(app: tauri::AppHandle) -> Result<Vec<PluginEntry>, String> {
+    let dir = plugins_dir(&app)?;
+    let mut entries: Vec<PluginEntry> = Vec::new();
+
+    for item in std::fs::read_dir(&dir).map_err(|e| format!("读取插件目录失败: {e}"))? {
+        let item = item.map_err(|e| e.to_string())?;
+        let path = item.path();
+        if path.is_dir() {
+            if let Ok(manifest) = read_manifest(&path) {
+                let id = manifest["id"].as_str().unwrap_or_default().to_string();
+                entries.push(PluginEntry {
+                    id,
+                    manifest,
+                    kind: "dir".into(),
+                });
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            // 单文件 JSON 插件：manifest 字段 + code
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if let Ok(manifest) = serde_json::from_str::<Value>(&text) {
+                    if manifest.get("code").and_then(|v| v.as_str()).is_some() {
+                        let valid = manifest
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .map(validate_plugin_id);
+                        if let Some(Ok(())) = valid {
+                            entries.push(PluginEntry {
+                                id: manifest["id"].as_str().unwrap_or_default().to_string(),
+                                manifest,
+                                kind: "file".into(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(entries)
+}
+
+/// 读取插件入口 JS 代码（交由前端注入沙箱 Worker 执行）
+#[tauri::command]
+pub fn plugin_read_code(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    validate_plugin_id(&id)?;
+    let dir = plugins_dir(&app)?;
+
+    let plugin_dir = dir.join(&id);
+    if plugin_dir.is_dir() {
+        let manifest = read_manifest(&plugin_dir)?;
+        let main = manifest
+            .get("main")
+            .and_then(|v| v.as_str())
+            .unwrap_or("main.js");
+        // main 仅允许相对路径，禁止越界
+        if main.contains("..") || Path::new(main).is_absolute() {
+            return Err("manifest.main 必须是插件目录内的相对路径".into());
+        }
+        let code_path = plugin_dir.join(main);
+        return std::fs::read_to_string(code_path).map_err(|e| format!("读取插件代码失败: {e}"));
+    }
+
+    let file_path = dir.join(format!("{id}.json"));
+    if file_path.is_file() {
+        let text = std::fs::read_to_string(&file_path)
+            .map_err(|e| format!("读取插件文件失败: {e}"))?;
+        let manifest: Value =
+            serde_json::from_str(&text).map_err(|e| format!("解析插件文件失败: {e}"))?;
+        return manifest
+            .get("code")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| "单文件插件缺少 code 字段".to_string());
+    }
+
+    Err(format!("未找到插件: {id}"))
+}
+
+fn temp_suffix() -> String {
+    let mut rng = rand::rng();
+    format!("{:08x}", rng.random::<u32>())
+}
+
+/// 从 zip 字节安装：解压到临时目录，校验后移入插件目录
+fn install_from_zip(app: &tauri::AppHandle, bytes: &[u8]) -> Result<PluginEntry, String> {
+    let dir = plugins_dir(app)?;
+    let tmp_root = dir.join(format!(".install-{}", temp_suffix()));
+    std::fs::create_dir_all(&tmp_root).map_err(|e| e.to_string())?;
+
+    let result = (|| -> Result<PluginEntry, String> {
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("打开 zip 失败: {e}"))?;
+
+        let tmp_root_canon = tmp_root.canonicalize().map_err(|e| e.to_string())?;
+        for i in 0..archive.len() {
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| format!("读取 zip 条目失败: {e}"))?;
+            let Some(rel) = file.enclosed_name() else {
+                continue; // 跳过越界路径
+            };
+            let out_path = tmp_root_canon.join(rel);
+            if file.is_dir() {
+                std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                let mut outfile = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+            }
+        }
+
+        // manifest 可能在根目录，也可能被包在单层顶层文件夹里
+        let manifest_root = read_manifest(&tmp_root_canon);
+        let (src_dir, manifest) = match manifest_root {
+            Ok(m) => (tmp_root_canon.clone(), m),
+            Err(_) => {
+                let mut dirs: Vec<PathBuf> = Vec::new();
+                for item in std::fs::read_dir(&tmp_root_canon).map_err(|e| e.to_string())? {
+                    let item = item.map_err(|e| e.to_string())?;
+                    if item.path().is_dir() {
+                        dirs.push(item.path());
+                    }
+                }
+                if dirs.len() != 1 {
+                    return Err("zip 内未找到 manifest.json".into());
+                }
+                let sub = dirs.remove(0);
+                let m = read_manifest(&sub)?;
+                (sub, m)
+            }
+        };
+
+        let id = manifest["id"].as_str().unwrap_or_default().to_string();
+        let target = dir.join(&id);
+        if target.exists() {
+            std::fs::remove_dir_all(&target).map_err(|e| format!("覆盖旧插件失败: {e}"))?;
+        }
+        move_dir(&src_dir, &target).map_err(|e| format!("安装插件失败: {e}"))?;
+
+        Ok(PluginEntry {
+            id,
+            manifest,
+            kind: "dir".into(),
+        })
+    })();
+
+    let _ = std::fs::remove_dir_all(&tmp_root);
+    result
+}
+
+/// 递归移动目录（跨卷时回退为复制+删除）
+fn move_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::rename(src, dst).or_else(|_| {
+        std::fs::create_dir_all(dst)?;
+        for item in std::fs::read_dir(src)? {
+            let item = item?;
+            let to = dst.join(item.file_name());
+            if item.path().is_dir() {
+                move_dir(&item.path(), &to)?;
+            } else {
+                std::fs::copy(item.path(), to)?;
+            }
+        }
+        std::fs::remove_dir_all(src)
+    })
+}
+
+/// 安装单文件 JSON 插件
+fn install_from_single_json(
+    app: &tauri::AppHandle,
+    text: &str,
+) -> Result<PluginEntry, String> {
+    let manifest: Value =
+        serde_json::from_str(text).map_err(|e| format!("解析插件 JSON 失败: {e}"))?;
+    let id = manifest
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or("插件 JSON 缺少 id 字段")?
+        .to_string();
+    validate_plugin_id(&id)?;
+    if manifest.get("code").and_then(|v| v.as_str()).is_none() {
+        return Err("插件 JSON 缺少 code 字段（目录型插件请打包为 zip）".into());
+    }
+    let dir = plugins_dir(app)?;
+    let target = dir.join(format!("{id}.json"));
+    std::fs::write(&target, text).map_err(|e| format!("写入插件文件失败: {e}"))?;
+    Ok(PluginEntry {
+        id,
+        manifest,
+        kind: "file".into(),
+    })
+}
+
+/// 从本地路径安装：目录 → 直接复制；.zip → 解压；.json → 单文件插件
+#[tauri::command]
+pub fn plugin_install_from_path(app: tauri::AppHandle, src: String) -> Result<PluginEntry, String> {
+    let src_path = PathBuf::from(&src);
+    if src_path.is_dir() {
+        let manifest = read_manifest(&src_path)?;
+        let id = manifest["id"].as_str().unwrap_or_default().to_string();
+        let dir = plugins_dir(&app)?;
+        let target = dir.join(&id);
+        if src_path.canonicalize().ok() == target.canonicalize().ok() {
+            return Ok(PluginEntry {
+                id,
+                manifest,
+                kind: "dir".into(),
+            });
+        }
+        if target.exists() {
+            std::fs::remove_dir_all(&target).map_err(|e| format!("覆盖旧插件失败: {e}"))?;
+        }
+        move_dir(&src_path, &target).map_err(|e| format!("安装插件失败: {e}"))?;
+        Ok(PluginEntry {
+            id,
+            manifest,
+            kind: "dir".into(),
+        })
+    } else if src_path.extension().and_then(|e| e.to_str()) == Some("zip") {
+        let bytes =
+            std::fs::read(&src_path).map_err(|e| format!("读取 zip 文件失败: {e}"))?;
+        install_from_zip(&app, &bytes)
+    } else if src_path.extension().and_then(|e| e.to_str()) == Some("json") {
+        let text = std::fs::read_to_string(&src_path)
+            .map_err(|e| format!("读取插件文件失败: {e}"))?;
+        install_from_single_json(&app, &text)
+    } else {
+        Err("仅支持插件目录、.zip 包或单文件 .json 插件".into())
+    }
+}
+
+/// 从 URL 安装：下载后按 zip / 单文件 JSON 处理
+#[tauri::command]
+pub async fn plugin_install_from_url(
+    app: tauri::AppHandle,
+    url: String,
+) -> Result<PluginEntry, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .user_agent("WinPlayer/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("下载插件失败: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("下载插件失败: HTTP {}", response.status()));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("读取插件内容失败: {e}"))?;
+
+    // 优先按单文件 JSON 识别，失败则按 zip 处理
+    if let Ok(text) = std::str::from_utf8(&bytes) {
+        if let Ok(entry) = install_from_single_json(&app, text) {
+            return Ok(entry);
+        }
+    }
+    install_from_zip(&app, &bytes)
+}
+
+/// 删除已安装插件（同时清理其私有存储）
+#[tauri::command]
+pub fn plugin_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    validate_plugin_id(&id)?;
+    let dir = plugins_dir(&app)?;
+
+    let plugin_dir = dir.join(&id);
+    if plugin_dir.is_dir() {
+        std::fs::remove_dir_all(&plugin_dir).map_err(|e| format!("删除插件失败: {e}"))?;
+    }
+    let plugin_file = dir.join(format!("{id}.json"));
+    if plugin_file.is_file() {
+        std::fs::remove_file(&plugin_file).map_err(|e| format!("删除插件失败: {e}"))?;
+    }
+
+    let storage = storage_dir(&app)?.join(format!("{id}.json"));
+    if storage.is_file() {
+        let _ = std::fs::remove_file(storage);
+    }
+    Ok(())
+}
+
+fn storage_path(app: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
+    validate_plugin_id(id)?;
+    Ok(storage_dir(app)?.join(format!("{id}.json")))
+}
+
+/// 读取插件私有存储（整个 JSON 对象）
+#[tauri::command]
+pub fn plugin_storage_get(app: tauri::AppHandle, id: String) -> Result<Value, String> {
+    let path = storage_path(&app, &id)?;
+    if !path.is_file() {
+        return Ok(Value::Object(serde_json::Map::new()));
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| format!("解析插件存储失败: {e}"))
+}
+
+/// 写入插件私有存储（整体覆盖 JSON 对象）
+#[tauri::command]
+pub fn plugin_storage_set(app: tauri::AppHandle, id: String, value: Value) -> Result<(), String> {
+    let path = storage_path(&app, &id)?;
+    let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    let mut file = std::fs::File::create(&path).map_err(|e| format!("写入插件存储失败: {e}"))?;
+    file.write_all(text.as_bytes())
+        .map_err(|e| format!("写入插件存储失败: {e}"))
+}
+
+/// 供 base64 解码辅助使用（保留以避免未使用告警的工具函数）
+#[allow(dead_code)]
+pub fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    base64::engine::general_purpose::STANDARD
+        .decode(input)
+        .map_err(|e| e.to_string())
+}
+
+/// 简单可读性辅助：读取文件大小（用于调试）
+#[allow(dead_code)]
+pub fn file_size(path: &Path) -> Option<u64> {
+    std::fs::metadata(path).ok().map(|m| m.len())
+}
+
+/// 保证 Read trait 在范围内被引用（zip 解压辅助）
+#[allow(dead_code)]
+fn _assert_read<R: Read>(_: R) {}

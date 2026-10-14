@@ -1,0 +1,219 @@
+/* 全局基础样式 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-family-display);
+  font-size: 14px;
+  color: var(--wp-text-primary);
+  background: var(--wp-base);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* 文本元素可选中 */
+p,
+li,
+td,
+.lrc-line,
+.text-selectable {
+  user-select: text;
+}
+
+a {
+  color: var(--wp-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* ------------------------------ 滚动条（WinUI 风格细滚动条） ------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--wp-scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 3px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background-color: var(--wp-scrollbar-thumb);
+}
+
+/* ------------------------------ 通用工具类 ------------------------------ */
+.wp-icon {
+  font-family: var(--font-family-icon);
+  font-style: normal;
+  line-height: 1;
+  display: inline-block;
+}
+
+.wp-page {
+  padding: var(--space-2xl) var(--space-3xl);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.wp-page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-2xl);
+}
+
+.wp-page-title {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.wp-section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 var(--space-lg) 0;
+}
+
+/* WinUI 强调色按钮 */
+.wp-accent-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: 32px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--wp-accent);
+  color: var(--wp-text-on-accent);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.wp-accent-button:hover {
+  background: var(--wp-accent-hover);
+}
+
+.wp-accent-button:active {
+  background: var(--wp-accent-active);
+}
+
+.wp-accent-button:disabled {
+  background: var(--wp-control-fill-secondary);
+  color: var(--wp-text-disabled);
+  cursor: default;
+}
+
+/* WinUI 标准按钮（次级） */
+.wp-standard-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: 32px;
+  padding: 0 18px;
+  border: 1px solid var(--wp-control-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--wp-control-fill);
+  color: var(--wp-text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.wp-standard-button:hover {
+  background: var(--wp-card-hover);
+}
+
+.wp-standard-button:active {
+  background: var(--wp-card-active);
+}
+
+.wp-standard-button.danger {
+  color: var(--wp-danger);
+}
+
+/* 图标按钮（无边框） */
+.wp-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--wp-text-primary);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.wp-icon-button:hover {
+  background: var(--wp-card-hover);
+}
+
+.wp-icon-button:active {
+  background: var(--wp-card-active);
+}
+
+.wp-icon-button.active {
+  color: var(--wp-accent);
+}
+
+/* 焦点视觉 */
+:focus-visible {
+  outline: 2px solid var(--wp-text-primary);
+  outline-offset: 1px;
+}
+
+/* ------------------------------ 过渡（路由切换动画，WinUI Entrance） ------------------------------ */
+.wp-route-enter-active {
+  transition:
+    transform var(--duration-slow) var(--ease-decelerate),
+    opacity var(--duration-slow) var(--ease-decelerate);
+}
+
+.wp-route-leave-active {
+  transition:
+    transform var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.wp-route-enter-from {
+  transform: translateY(24px);
+  opacity: 0;
+}
+
+.wp-route-leave-to {
+  transform: translateY(-12px);
+  opacity: 0;
+}

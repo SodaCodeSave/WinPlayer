@@ -1,0 +1,35 @@
+[package]
+name = "winplayer"
+version = "0.1.0"
+description = "A plugin-driven music player with WinUI design, built with Tauri 2"
+authors = ["WinPlayer Contributors"]
+edition = "2021"
+rust-version = "1.77.2"
+license = "MIT"
+
+[lib]
+name = "winplayer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "gzip", "brotli"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+base64 = "0.22"
+rand = "0.9"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"

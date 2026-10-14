@@ -1,0 +1,170 @@
+/**
+ * WinUI 3 设计令牌（亮/暗主题）
+ * 数值对齐 Microsoft WinUI 3 / Fluent Design 官方调色板
+ */
+
+:root {
+  /* 字体 */
+  --font-family-display: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui,
+    "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-family-icon: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+
+  /* 间距 */
+  --space-xs: 2px;
+  --space-sm: 4px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* 布局尺寸 */
+  --titlebar-height: 48px;
+  --sidenav-width: 232px;
+  --playerbar-height: 92px;
+
+  /* 动效 */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 350ms;
+  --ease-standard: cubic-bezier(0.33, 0, 0.67, 1);
+  --ease-decelerate: cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+/* ------------------------------ 亮色主题 ------------------------------ */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --wp-accent: #005fb8;
+  --wp-accent-hover: #1a6fc4;
+  --wp-accent-active: #4a89c9;
+  --wp-accent-text: #ffffff;
+  --wp-accent-light: rgba(0, 95, 184, 0.1);
+
+  /* 背景层级（近似 Mica 分层） */
+  --wp-base: #f3f3f3;
+  --wp-layer: rgba(255, 255, 255, 0.7);
+  --wp-layer-solid: #fbfbfb;
+  --wp-card: rgba(255, 255, 255, 0.7);
+  --wp-card-hover: rgba(255, 255, 255, 0.9);
+  --wp-card-active: rgba(249, 249, 249, 0.5);
+  --wp-flyout: #fbfbfb;
+  --wp-control-fill: rgba(255, 255, 255, 0.7);
+  --wp-control-fill-secondary: rgba(249, 249, 249, 0.5);
+  --wp-control-fill-tertiary: rgba(249, 249, 249, 0.3);
+  --wp-control-stroke: rgba(0, 0, 0, 0.0578);
+  --wp-control-stroke-secondary: rgba(0, 0, 0, 0.16);
+  --wp-divider: rgba(0, 0, 0, 0.0803);
+
+  /* 文本 */
+  --wp-text-primary: rgba(0, 0, 0, 0.8956);
+  --wp-text-secondary: rgba(0, 0, 0, 0.6063);
+  --wp-text-tertiary: rgba(0, 0, 0, 0.4458);
+  --wp-text-disabled: rgba(0, 0, 0, 0.3614);
+  --wp-text-on-accent: #ffffff;
+
+  /* 状态 */
+  --wp-danger: #c42b1c;
+  --wp-danger-hover: #c93c30;
+  --wp-success: #0f7b0f;
+  --wp-warning: #9d5d00;
+
+  /* 阴影 */
+  --shadow-flyout: 0 8px 16px rgba(0, 0, 0, 0.14);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+
+  --wp-scrollbar-thumb: rgba(0, 0, 0, 0.36);
+}
+
+/* ------------------------------ 暗色主题 ------------------------------ */
+/* 手动锁定暗色 */
+:root[data-theme="dark"],
+/* 跟随系统且系统为暗色 */
+:root:not([data-theme="light"]) {
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] {
+  --wp-accent: #4cc2ff;
+  --wp-accent-hover: #47b1eb;
+  --wp-accent-active: #42a2d9;
+  --wp-accent-text: #000000;
+  --wp-accent-light: rgba(76, 194, 255, 0.12);
+
+  --wp-base: #202020;
+  --wp-layer: rgba(255, 255, 255, 0.0512);
+  --wp-layer-solid: #272727;
+  --wp-card: rgba(255, 255, 255, 0.0512);
+  --wp-card-hover: rgba(255, 255, 255, 0.0837);
+  --wp-card-active: rgba(255, 255, 255, 0.037);
+  --wp-flyout: #2c2c2c;
+  --wp-control-fill: rgba(255, 255, 255, 0.0605);
+  --wp-control-fill-secondary: rgba(255, 255, 255, 0.0419);
+  --wp-control-fill-tertiary: rgba(255, 255, 255, 0.0241);
+  --wp-control-stroke: rgba(255, 255, 255, 0.0698);
+  --wp-control-stroke-secondary: rgba(255, 255, 255, 0.0926);
+  --wp-divider: rgba(255, 255, 255, 0.0803);
+
+  --wp-text-primary: #ffffff;
+  --wp-text-secondary: rgba(255, 255, 255, 0.786);
+  --wp-text-tertiary: rgba(255, 255, 255, 0.5442);
+  --wp-text-disabled: rgba(255, 255, 255, 0.3628);
+  --wp-text-on-accent: #000000;
+
+  --wp-danger: #ff99a4;
+  --wp-danger-hover: #ffc2c9;
+  --wp-success: #6ccb5f;
+  --wp-warning: #fce100;
+
+  --shadow-flyout: 0 8px 16px rgba(0, 0, 0, 0.26);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.18);
+
+  --wp-scrollbar-thumb: rgba(255, 255, 255, 0.36);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wp-accent: #4cc2ff;
+    --wp-accent-hover: #47b1eb;
+    --wp-accent-active: #42a2d9;
+    --wp-accent-text: #000000;
+    --wp-accent-light: rgba(76, 194, 255, 0.12);
+
+    --wp-base: #202020;
+    --wp-layer: rgba(255, 255, 255, 0.0512);
+    --wp-layer-solid: #272727;
+    --wp-card: rgba(255, 255, 255, 0.0512);
+    --wp-card-hover: rgba(255, 255, 255, 0.0837);
+    --wp-card-active: rgba(255, 255, 255, 0.037);
+    --wp-flyout: #2c2c2c;
+    --wp-control-fill: rgba(255, 255, 255, 0.0605);
+    --wp-control-fill-secondary: rgba(255, 255, 255, 0.0419);
+    --wp-control-fill-tertiary: rgba(255, 255, 255, 0.0241);
+    --wp-control-stroke: rgba(255, 255, 255, 0.0698);
+    --wp-control-stroke-secondary: rgba(255, 255, 255, 0.0926);
+    --wp-divider: rgba(255, 255, 255, 0.0803);
+
+    --wp-text-primary: #ffffff;
+    --wp-text-secondary: rgba(255, 255, 255, 0.786);
+    --wp-text-tertiary: rgba(255, 255, 255, 0.5442);
+    --wp-text-disabled: rgba(255, 255, 255, 0.3628);
+    --wp-text-on-accent: #000000;
+
+    --wp-danger: #ff99a4;
+    --wp-danger-hover: #ffc2c9;
+    --wp-success: #6ccb5f;
+    --wp-warning: #fce100;
+
+    --shadow-flyout: 0 8px 16px rgba(0, 0, 0, 0.26);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.18);
+
+    --wp-scrollbar-thumb: rgba(255, 255, 255, 0.36);
+  }
+}
