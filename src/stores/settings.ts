@@ -12,14 +12,26 @@ export const useSettingsStore = defineStore("settings", () => {
   const marketSources = ref<MarketSource[]>([]);
   const loaded = ref(false);
 
-  /** 将主题偏好应用到 document（winuionweb 通过 html[data-theme] 切换，缺省跟随系统） */
+  /** 系统配色查询：winuionweb 的暗色控件变量只认 html 上的 theme-dark 类，
+   * 仅 data-theme 属性不会切换其输入框/下拉框配色，故类名必须同步。
+   * 跟随系统时也解析出实际配色写入属性与类，保证控件库与自身 tokens 一致。 */
+  const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+
   function applyTheme(): void {
-    if (theme.value === "system") {
-      delete document.documentElement.dataset.theme;
-    } else {
-      document.documentElement.dataset.theme = theme.value;
-    }
+    const root = document.documentElement;
+    const dark = theme.value === "system" ? darkScheme.matches : theme.value === "dark";
+    root.dataset.theme = dark ? "dark" : "light";
+    root.classList.toggle("theme-dark", dark);
+    root.classList.toggle("theme-light", !dark);
   }
+
+  // 跟随系统时，系统配色变化后重新应用
+  darkScheme.addEventListener("change", () => {
+    if (theme.value === "system") applyTheme();
+  });
+
+  // 首次创建即应用（设置尚未从数据库加载时的默认值）
+  applyTheme();
 
   async function load(): Promise<void> {
     theme.value = await getSetting<ThemePreference>("settings.theme", "system");
