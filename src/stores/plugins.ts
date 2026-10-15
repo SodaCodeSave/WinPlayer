@@ -9,6 +9,9 @@ import { getDb } from "@/services/db";
 import { httpFetchJson } from "@/services/proxy";
 import { toast } from "@/services/toast";
 import type {
+  AlbumDetail,
+  ArtistAlbumsResult,
+  ArtistDetail,
   LoginPollResult,
   LoginQr,
   LoginState,
@@ -240,6 +243,30 @@ export const usePluginsStore = defineStore("plugins", () => {
     );
   }
 
+  /**
+   * 按类型聚合搜索（专辑 / 歌手 Tab 用）。
+   *
+   * 与 searchAll 不同：searchAll 固定拉单曲+歌单（搜索页默认 Tab），而搜索页只有在用户
+   * 首次点开「专辑」「歌手」Tab 时才调用本方法，避免每次搜索都多发两个请求。
+   */
+  async function searchByType(
+    keyword: string,
+    type: "album" | "artist",
+  ): Promise<AggregatedSourceResult<SearchResult>[]> {
+    const targets = enabledRecords.value.filter((r) => hasCapability(r, "search"));
+    return Promise.all(
+      targets.map(async (record): Promise<AggregatedSourceResult<SearchResult>> => {
+        try {
+          const host = await getHost(record.entry.id);
+          const result = await host.invoke<SearchResult>("search", { keyword, type, page: 1 });
+          return { record, result: normalizeSearchResult(result, record.entry.id) };
+        } catch (error) {
+          return { record, result: null, error: error instanceof Error ? error.message : String(error) };
+        }
+      }),
+    );
+  }
+
   /** 聚合推荐 */
   async function recommendAll(): Promise<AggregatedSourceResult<RecommendResult>[]> {
     const targets = enabledRecords.value.filter((r) => hasCapability(r, "recommend"));
@@ -285,6 +312,42 @@ export const usePluginsStore = defineStore("plugins", () => {
       detail.tracks = (detail.tracks ?? []).map((t) => ({ ...t, sourceId }));
     }
     return detail;
+  }
+
+  /** 获取插件来源的专辑详情（含曲目） */
+  async function getAlbumDetail(sourceId: string, albumId: string): Promise<AlbumDetail | null> {
+    const host = await getHost(sourceId);
+    const detail = await host.invoke<AlbumDetail>("getAlbum", { id: albumId });
+    if (detail) {
+      detail.sourceId = sourceId;
+      detail.tracks = (detail.tracks ?? []).map((t) => ({ ...t, sourceId }));
+    }
+    return detail;
+  }
+
+  /** 获取插件来源的歌手详情（含热门歌曲） */
+  async function getArtistDetail(sourceId: string, artistId: string): Promise<ArtistDetail | null> {
+    const host = await getHost(sourceId);
+    const detail = await host.invoke<ArtistDetail>("getArtist", { id: artistId });
+    if (detail) {
+      detail.sourceId = sourceId;
+      detail.hotTracks = (detail.hotTracks ?? []).map((t) => ({ ...t, sourceId }));
+    }
+    return detail;
+  }
+
+  /** 获取插件来源的歌手专辑列表（分页，滚动加载用） */
+  async function getArtistAlbums(
+    sourceId: string,
+    artistId: string,
+    page = 1,
+  ): Promise<ArtistAlbumsResult | null> {
+    const host = await getHost(sourceId);
+    const result = await host.invoke<ArtistAlbumsResult>("getArtistAlbums", { id: artistId, page });
+    if (result) {
+      result.albums = (result.albums ?? []).map((album) => ({ ...album, sourceId }));
+    }
+    return result;
   }
 
   /** 获取热搜词（聚合所有支持的插件） */
@@ -400,10 +463,14 @@ export const usePluginsStore = defineStore("plugins", () => {
     uninstall,
     disposeAll,
     searchAll,
+    searchByType,
     recommendAll,
     getSongUrl,
     getLyrics,
     getPlaylistDetail,
+    getAlbumDetail,
+    getArtistDetail,
+    getArtistAlbums,
     getHotKeywords,
     getLoginQr,
     pollLogin,
@@ -421,6 +488,8 @@ function normalizeSearchResult(result: SearchResult | null, sourceId: string): S
     ...result,
     songs: (result.songs ?? []).map((t) => ({ ...t, sourceId })),
     playlists: (result.playlists ?? []).map((p) => ({ ...p, sourceId })),
+    albums: (result.albums ?? []).map((a) => ({ ...a, sourceId })),
+    artists: (result.artists ?? []).map((a) => ({ ...a, sourceId })),
   };
 }
 

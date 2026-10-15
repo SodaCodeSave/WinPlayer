@@ -1,21 +1,39 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+/**
+ * 歌单详情页
+ *
+ * 两条路径共用一套页面结构：
+ * - 本地歌单：/playlist/:id        数据来自 library（SQLite）
+ * - 插件歌单：/playlist/:source/:id 数据来自 plugins.getPlaylistDetail()
+ */
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ContentDialog, TextBox } from "winuionweb";
+import { ContentDialog, ProgressRing, TextBox } from "winuionweb";
 import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
+import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import SongTable from "@/components/common/SongTable.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
-import type { UnifiedTrack } from "@/types/plugin";
+import type { PlaylistDetail, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
 const router = useRouter();
 const library = useLibraryStore();
 const player = usePlayerStore();
+const plugins = usePluginsStore();
 
-const playlistId = ref<number>(0);
+/** 插件来源歌单：路由名固定为 sourcePlaylist，多带一段 source */
+const isRemote = computed(() => route.name === "sourcePlaylist");
+const sourceId = computed(() => (typeof route.params.source === "string" ? route.params.source : ""));
+const sourceName = computed(() =>
+  sourceId.value ? pluginDisplayName(plugins.records, sourceId.value) : "",
+);
+
+const playlistId = ref(0);
+const remote = ref<PlaylistDetail | null>(null);
 const tracks = ref<UnifiedTrack[]>([]);
 const loading = ref(false);
+const loadError = ref("");
 const renameValue = ref("");
 
 /** ContentDialog 通过 ShowAsync() 打开（库没有 IsOpen prop） */
@@ -25,9 +43,45 @@ interface DialogRef {
 const renameDialogRef = ref<DialogRef | null>(null);
 const deleteDialogRef = ref<DialogRef | null>(null);
 
-const playlist = () => library.playlists.find((item) => item.id === playlistId.value);
+const localPlaylist = () => library.playlists.find((item) => item.id === playlistId.value);
 
-async function load(id: number) {
+/** 两种来源归一成一个头部视图模型，模板只写一份 */
+const header = computed(() => {
+  if (isRemote.value) {
+    const detail = remote.value;
+    if (!detail) return null;
+    const parts = [`${detail.trackCount ?? tracks.value.length} 首`];
+    if (detail.creator) parts.unshift(detail.creator);
+    return { cover: detail.cover, name: detail.name, sub: parts.join(" · "), description: detail.description };
+  }
+  const item = localPlaylist();
+  if (!item) return null;
+  return {
+    cover: item.cover,
+    name: item.name,
+    sub: `${item.trackCount ?? tracks.value.length} 首`,
+    description: item.description,
+  };
+});
+
+async function loadRemote(source: string, id: string) {
+  loading.value = true;
+  try {
+    const detail = await plugins.getPlaylistDetail(source, id);
+    if (!detail) {
+      loadError.value = "插件没有返回这个歌单的内容";
+      return;
+    }
+    remote.value = detail;
+    tracks.value = detail.tracks ?? [];
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadLocal(id: number) {
   loading.value = true;
   try {
     tracks.value = await library.getPlaylistTracks(id);
@@ -36,31 +90,51 @@ async function load(id: number) {
   }
 }
 
-watch(
-  () => route.params.id,
-  (value) => {
-    const id = Number(value);
-    if (Number.isFinite(id) && id > 0) {
-      playlistId.value = id;
-      void load(id);
-    } else {
+async function loadRoute() {
+  loadError.value = "";
+  remote.value = null;
+  tracks.value = [];
+
+  if (isRemote.value) {
+    const source = String(route.params.source ?? "");
+    const id = String(route.params.id ?? "");
+    if (!source || !id) {
       void router.replace("/");
+      return;
     }
-  },
-  { immediate: true },
-);
+    await loadRemote(source, id);
+    return;
+  }
+
+  const id = Number(route.params.id);
+  if (Number.isFinite(id) && id > 0) {
+    playlistId.value = id;
+    renameValue.value = localPlaylist()?.name ?? "";
+    await loadLocal(id);
+  } else {
+    void router.replace("/");
+  }
+}
+
+watch(() => route.fullPath, () => void loadRoute(), { immediate: true });
 
 function playAll() {
   if (tracks.value.length) void player.playTracks(tracks.value, 0);
 }
 
+function shufflePlay() {
+  if (tracks.value.length) {
+    void player.playTracks(tracks.value, Math.floor(Math.random() * tracks.value.length));
+  }
+}
+
 async function onRemove(track: UnifiedTrack) {
   await library.removeTrackFromPlaylist(playlistId.value, track);
-  await load(playlistId.value);
+  await loadLocal(playlistId.value);
 }
 
 async function openRename() {
-  renameValue.value = playlist()?.name ?? "";
+  renameValue.value = localPlaylist()?.name ?? "";
   const result = await renameDialogRef.value?.ShowAsync();
   if (result !== "Primary") return;
   await library.renamePlaylist(playlistId.value, renameValue.value);
@@ -72,50 +146,76 @@ async function openDelete() {
   await library.deletePlaylist(playlistId.value);
   void router.replace("/liked");
 }
-
-onMounted(() => {
-  if (playlist()) renameValue.value = playlist()!.name;
-});
 </script>
 
 <template>
   <div class="wp-page">
-    <template v-if="playlist()">
+    <template v-if="header">
       <div class="wp-page-header">
         <div class="header-cover">
-          <img v-if="playlist()!.cover" :src="playlist()!.cover" alt="" class="cover-img" />
+          <img v-if="header.cover" :src="header.cover" alt="" class="cover-img" />
           <span v-else class="wp-icon">&#xE8FD;</span>
         </div>
         <div class="header-meta">
-          <h1 class="wp-page-title">{{ playlist()!.name }}</h1>
+          <h1 class="wp-page-title">{{ header.name }}</h1>
           <div class="header-sub">
-            {{ playlist()!.trackCount ?? tracks.length }} 首
-            <span v-if="playlist()!.description"> · {{ playlist()!.description }}</span>
+            {{ header.sub }}
+            <span v-if="header.description" class="header-desc"> · {{ header.description }}</span>
           </div>
           <div class="header-sub-actions">
-            <button class="wp-standard-button small" @click="openRename">
-              <span class="wp-icon">&#xE70F;</span>重命名
-            </button>
-            <button class="wp-standard-button small danger" @click="openDelete">
-              <span class="wp-icon">&#xE74D;</span>删除歌单
-            </button>
+            <template v-if="!isRemote">
+              <button class="wp-standard-button small" @click="openRename">
+                <span class="wp-icon">&#xE70F;</span>重命名
+              </button>
+              <button class="wp-standard-button small danger" @click="openDelete">
+                <span class="wp-icon">&#xE74D;</span>删除歌单
+              </button>
+            </template>
+            <span v-else class="source-badge">来自 {{ sourceName }}</span>
           </div>
         </div>
         <div class="header-actions">
           <button class="wp-accent-button" :disabled="!tracks.length" @click="playAll">
             <span class="wp-icon">&#xE768;</span>播放全部
           </button>
+          <button class="wp-standard-button" :disabled="!tracks.length" @click="shufflePlay">
+            <span class="wp-icon">&#xE8B1;</span>随机播放
+          </button>
         </div>
       </div>
 
+      <div v-if="loading" class="loading-wrap">
+        <ProgressRing :IsActive="true" :IsIndeterminate="true" :Width="36" :Height="36" />
+        <span class="loading-text">正在加载歌单…</span>
+      </div>
+
+      <EmptyState
+        v-else-if="loadError"
+        icon="&#xE7BA;"
+        title="歌单加载失败"
+        :description="loadError"
+      >
+        <button class="wp-standard-button" @click="router.back()">返回</button>
+      </EmptyState>
+
       <SongTable
-        v-if="tracks.length"
+        v-else-if="tracks.length"
         :tracks="tracks"
-        :show-source="true"
-        :removable="true"
+        :show-source="!isRemote"
+        :removable="!isRemote"
         @remove="onRemove"
       />
-      <EmptyState v-else-if="!loading" icon="&#xE8FD;" title="歌单还是空的" description="在搜索结果或喜欢的音乐里，把歌曲添加到这个歌单吧。" />
+
+      <EmptyState
+        v-else
+        icon="&#xE8FD;"
+        title="歌单还是空的"
+        :description="
+          isRemote
+            ? '这个歌单暂时没有可展示的歌曲，可能是插件没有登录或内容受地区限制。'
+            : '在搜索结果或喜欢的音乐里，把歌曲添加到这个歌单吧。'
+        "
+      />
     </template>
 
     <ContentDialog
@@ -177,10 +277,22 @@ onMounted(() => {
   margin-top: var(--space-sm);
 }
 
+/* 描述可能很长，限制行数避免撑爆头部 */
+.header-desc {
+  display: inline;
+  word-break: break-all;
+}
+
 .header-sub-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-md);
   margin-top: var(--space-md);
+}
+
+.source-badge {
+  font-size: 12px;
+  color: var(--wp-text-tertiary);
 }
 
 .small {
@@ -192,6 +304,19 @@ onMounted(() => {
 .header-actions {
   display: flex;
   gap: var(--space-md);
+}
+
+.loading-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: 80px 0;
+  color: var(--wp-text-secondary);
+}
+
+.loading-text {
+  font-size: 13px;
 }
 
 .dialog-form {

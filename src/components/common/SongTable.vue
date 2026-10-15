@@ -3,10 +3,11 @@
  * 歌曲列表（WinUI ListView 风格）
  */
 import { computed } from "vue";
+import { useRouter, type RouteLocationRaw } from "vue-router";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
-import { formatDuration, trackArtist, trackTitle } from "@/types/player";
+import { formatDuration, trackTitle } from "@/types/player";
 import type { UnifiedTrack } from "@/types/plugin";
 
 const props = withDefaults(
@@ -32,6 +33,36 @@ const emit = defineEmits<{
 const player = usePlayerStore();
 const library = useLibraryStore();
 const plugins = usePluginsStore();
+const router = useRouter();
+
+/** 歌手/专辑名是否能跳转，取决于插件有没有回传对应的 id */
+interface CellLink {
+  name: string;
+  target: RouteLocationRaw | null;
+}
+
+function artistCells(track: UnifiedTrack): CellLink[] {
+  const names = track.artists ?? [];
+  const ids = track.artistIds ?? [];
+  return names.map((name, index) => ({
+    name,
+    target:
+      track.sourceId && ids[index]
+        ? { name: "artist", params: { source: track.sourceId, id: ids[index] } }
+        : null,
+  }));
+}
+
+function albumCell(track: UnifiedTrack): CellLink | null {
+  if (!track.album) return null;
+  return {
+    name: track.album,
+    target:
+      track.sourceId && track.albumId
+        ? { name: "album", params: { source: track.sourceId, id: track.albumId } }
+        : null,
+  };
+}
 
 const rows = computed(() =>
   props.tracks.map((track) => ({
@@ -42,11 +73,22 @@ const rows = computed(() =>
     sourceName: track.sourceId
       ? plugins.records.find((r) => r.entry.id === track.sourceId)?.entry.manifest.name ?? track.sourceId
       : "",
+    artists: artistCells(track),
+    album: albumCell(track),
   })),
 );
 
 function playRow(index: number) {
   void player.playTracks(props.tracks, index);
+}
+
+function go(target: RouteLocationRaw) {
+  void router.push(target);
+}
+
+/** 歌手/专辑名上双击时只允许跳转，不要顺带触发整行播放 */
+function noop() {
+  /* 仅用于拦截事件 */
 }
 
 async function toggleLike(track: UnifiedTrack) {
@@ -88,8 +130,33 @@ function addSingle(track: UnifiedTrack) {
         <img v-if="row.track.cover" :src="row.track.cover" alt="" class="row-cover" />
         <span class="title-text ellipsis">{{ trackTitle(row.track) }}</span>
       </span>
-      <span class="col-artist ellipsis">{{ trackArtist(row.track) }}</span>
-      <span class="col-album ellipsis">{{ row.track.album ?? "" }}</span>
+      <span class="col-artist ellipsis">
+        <template v-for="(artist, index) in row.artists" :key="`${artist.name}-${index}`">
+          <span v-if="index" class="cell-sep"> / </span>
+          <button
+            v-if="artist.target"
+            class="cell-link"
+            :title="`查看歌手「${artist.name}」`"
+            @click.stop="go(artist.target)"
+            @dblclick.stop="noop"
+          >
+            {{ artist.name }}
+          </button>
+          <span v-else>{{ artist.name }}</span>
+        </template>
+      </span>
+      <span class="col-album ellipsis">
+        <button
+          v-if="row.album?.target"
+          class="cell-link"
+          :title="`查看专辑「${row.album.name}」`"
+          @click.stop="go(row.album.target)"
+          @dblclick.stop
+        >
+          {{ row.album.name }}
+        </button>
+        <template v-else>{{ row.album?.name ?? "" }}</template>
+      </span>
       <span v-if="showSource" class="col-source ellipsis">{{ row.sourceName }}</span>
       <span class="col-actions">
         <button
@@ -220,6 +287,26 @@ function addSingle(track: UnifiedTrack) {
   flex: 1.2;
   min-width: 0;
   color: var(--wp-text-secondary);
+}
+
+/* 歌手名 / 专辑名：有对应 id 时是可点击的跳转入口 */
+.cell-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.cell-link:hover {
+  color: var(--wp-text-primary);
+  text-decoration: underline;
+}
+
+.cell-sep {
+  color: var(--wp-text-tertiary);
 }
 
 .col-source {

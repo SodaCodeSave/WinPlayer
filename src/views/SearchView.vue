@@ -5,17 +5,22 @@ import { usePluginsStore } from "@/stores/plugins";
 import { usePlayerStore } from "@/stores/player";
 import SongTable from "@/components/common/SongTable.vue";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
+import MediaCard from "@/components/common/MediaCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { ProgressRing } from "winuionweb";
-import type { SearchResult, UnifiedPlaylist, UnifiedTrack } from "@/types/plugin";
+import type { SearchResult, UnifiedAlbum, UnifiedArtist, UnifiedPlaylist, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
 const router = useRouter();
 const plugins = usePluginsStore();
 const player = usePlayerStore();
 
+type TabType = "song" | "playlist" | "album" | "artist";
+/** 专辑 / 歌手这两个 Tab 是按需拉取的，只有点开时才发请求 */
+type LazyTabType = "album" | "artist";
+
 const keyword = ref("");
-const activeTab = ref<"song" | "playlist">("song");
+const activeTab = ref<TabType>("song");
 const loading = ref(false);
 const searched = ref(false);
 
@@ -27,6 +32,9 @@ interface SourceResult {
 }
 
 const sourceResults = ref<SourceResult[]>([]);
+const lazyResults = ref<Partial<Record<LazyTabType, SourceResult[]>>>({});
+/** 记录每个懒加载 Tab 已经为哪个关键词取过结果，换关键词时重新拉取 */
+const lazyLoadedFor = ref<Partial<Record<LazyTabType, string>>>({});
 
 const allSongs = computed<UnifiedTrack[]>(() =>
   sourceResults.value.flatMap((source) => source.result?.songs ?? []),
@@ -36,15 +44,55 @@ const allPlaylists = computed<UnifiedPlaylist[]>(() =>
   sourceResults.value.flatMap((source) => source.result?.playlists ?? []),
 );
 
+const allAlbums = computed<UnifiedAlbum[]>(() =>
+  (lazyResults.value.album ?? []).flatMap((source) => source.result?.albums ?? []),
+);
+
+const allArtists = computed<UnifiedArtist[]>(() =>
+  (lazyResults.value.artist ?? []).flatMap((source) => source.result?.artists ?? []),
+);
+
+/** 当前 Tab 各来源的失败信息（懒加载 Tab 是平铺网格，用一行汇总代替分组标题） */
+const activeErrors = computed(() => {
+  const sources = activeTab.value === "song" || activeTab.value === "playlist"
+    ? sourceResults.value
+    : (lazyResults.value[activeTab.value as LazyTabType] ?? []);
+  return sources.filter((source) => source.error).map((source) => `${source.name}：${source.error}`);
+});
+
 async function search(keywordValue: string) {
   const trimmed = keywordValue.trim();
   if (!trimmed) return;
   searched.value = true;
   loading.value = true;
   sourceResults.value = [];
+  lazyResults.value = {};
+  lazyLoadedFor.value = {};
   try {
     const results = await plugins.searchAll(trimmed);
     sourceResults.value = results.map((item) => ({
+      id: item.record.entry.id,
+      name: item.record.entry.manifest.name,
+      result: item.result,
+      error: item.error,
+    }));
+  } finally {
+    loading.value = false;
+  }
+  void ensureTab(activeTab.value);
+}
+
+/** 首次切到专辑/歌手 Tab 时才去搜，结果按关键词缓存，来回切换不重复请求 */
+async function ensureTab(tab: TabType) {
+  if (tab !== "album" && tab !== "artist") return;
+  const trimmed = keyword.value.trim();
+  if (!trimmed || !searched.value || lazyLoadedFor.value[tab] === trimmed) return;
+
+  lazyLoadedFor.value[tab] = trimmed;
+  loading.value = true;
+  try {
+    const results = await plugins.searchByType(trimmed, tab);
+    lazyResults.value[tab] = results.map((item) => ({
       id: item.record.entry.id,
       name: item.record.entry.manifest.name,
       result: item.result,
@@ -58,6 +106,8 @@ async function search(keywordValue: string) {
 function playAll() {
   if (allSongs.value.length) void player.playTracks(allSongs.value, 0);
 }
+
+watch(activeTab, (tab) => void ensureTab(tab));
 
 watch(
   () => route.query.q,
@@ -118,56 +168,93 @@ onMounted(() => {
       </div>
 
       <template v-else-if="searched">
-        <div v-if="!allSongs.length && !allPlaylists.length" class="no-result">
-          没有找到与「{{ route.query.q }}」相关的结果
+        <!-- 类型标签页 -->
+        <div class="tabs">
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'song' }"
+            @click="activeTab = 'song'"
+          >
+            单曲<span class="tab-count">{{ allSongs.length }}</span>
+          </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'playlist' }"
+            @click="activeTab = 'playlist'"
+          >
+            歌单<span class="tab-count">{{ allPlaylists.length }}</span>
+          </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'album' }"
+            @click="activeTab = 'album'"
+          >
+            专辑<span v-if="lazyResults.album" class="tab-count">{{ allAlbums.length }}</span>
+          </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'artist' }"
+            @click="activeTab = 'artist'"
+          >
+            歌手<span v-if="lazyResults.artist" class="tab-count">{{ allArtists.length }}</span>
+          </button>
+          <button v-if="activeTab === 'song' && allSongs.length" class="tab-action" @click="playAll">
+            <span class="wp-icon">&#xE768;</span>播放全部
+          </button>
         </div>
 
-        <template v-else>
-          <!-- 类型标签页 -->
-          <div class="tabs">
-            <button
-              class="tab"
-              :class="{ active: activeTab === 'song' }"
-              @click="activeTab = 'song'"
-            >
-              单曲<span class="tab-count">{{ allSongs.length }}</span>
-            </button>
-            <button
-              class="tab"
-              :class="{ active: activeTab === 'playlist' }"
-              @click="activeTab = 'playlist'"
-            >
-              歌单<span class="tab-count">{{ allPlaylists.length }}</span>
-            </button>
-            <button v-if="activeTab === 'song' && allSongs.length" class="tab-action" @click="playAll">
-              <span class="wp-icon">&#xE768;</span>播放全部
-            </button>
-          </div>
+        <!-- 单曲：按来源分组 -->
+        <div v-if="activeTab === 'song'">
+          <div v-if="!sourceResults.length" class="no-result">没有找到相关单曲</div>
+          <section v-for="source in sourceResults" :key="source.id" class="source-group">
+            <h3 class="group-title">
+              {{ source.name }}
+              <span v-if="source.error" class="group-error">加载失败：{{ source.error }}</span>
+              <span v-else-if="source.result?.songs?.length" class="group-count">
+                {{ source.result.songs.length }} 首
+              </span>
+            </h3>
+            <SongTable
+              v-if="source.result?.songs?.length"
+              :tracks="source.result.songs"
+              :show-source="false"
+            />
+          </section>
+        </div>
 
-          <!-- 单曲：按来源分组 -->
-          <div v-if="activeTab === 'song'">
-            <section v-for="source in sourceResults" :key="source.id" class="source-group">
-              <h3 class="group-title">
-                {{ source.name }}
-                <span v-if="source.error" class="group-error">加载失败：{{ source.error }}</span>
-                <span v-else-if="source.result?.songs?.length" class="group-count">
-                  {{ source.result.songs.length }} 首
-                </span>
-              </h3>
-              <SongTable
-                v-if="source.result?.songs?.length"
-                :tracks="source.result.songs"
-                :show-source="false"
-              />
-            </section>
-          </div>
-
-          <!-- 歌单：卡片网格 -->
-          <div v-else class="playlist-grid">
-            <PlaylistCard v-for="playlist in allPlaylists" :key="`${playlist.sourceId}:${playlist.id}`" :playlist="playlist" />
+        <!-- 歌单 / 专辑 / 歌手：卡片网格（平铺，卡片本身会标注来源） -->
+        <div v-else class="media-grid">
+          <template v-if="activeTab === 'playlist'">
+            <PlaylistCard
+              v-for="playlist in allPlaylists"
+              :key="`${playlist.sourceId}:${playlist.id}`"
+              :playlist="playlist"
+            />
             <div v-if="!allPlaylists.length" class="no-result">没有找到相关歌单</div>
-          </div>
-        </template>
+          </template>
+
+          <template v-else-if="activeTab === 'album'">
+            <MediaCard
+              v-for="album in allAlbums"
+              :key="`${album.sourceId}:${album.id}`"
+              kind="album"
+              :album="album"
+            />
+            <div v-if="!allAlbums.length" class="no-result">没有找到相关专辑</div>
+          </template>
+
+          <template v-else>
+            <MediaCard
+              v-for="artist in allArtists"
+              :key="`${artist.sourceId}:${artist.id}`"
+              kind="artist"
+              :artist="artist"
+            />
+            <div v-if="!allArtists.length" class="no-result">没有找到相关歌手</div>
+          </template>
+        </div>
+
+        <p v-if="activeErrors.length" class="tab-errors">{{ activeErrors.join("；") }}</p>
       </template>
     </template>
   </div>
@@ -327,9 +414,15 @@ onMounted(() => {
   color: var(--wp-danger);
 }
 
-.playlist-grid {
+.media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: var(--space-md);
+}
+
+.tab-errors {
+  margin: var(--space-lg) 0 0;
+  font-size: 12px;
+  color: var(--wp-danger);
 }
 </style>

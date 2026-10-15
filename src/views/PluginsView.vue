@@ -43,6 +43,8 @@ function capabilityLabel(capability: string): string {
     search: "搜索",
     songUrl: "播放直链",
     playlist: "歌单",
+    album: "专辑",
+    artist: "歌手",
     recommend: "推荐",
     lyrics: "歌词",
     hotKeywords: "热搜词",

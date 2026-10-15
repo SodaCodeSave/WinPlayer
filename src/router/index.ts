@@ -31,6 +31,25 @@ const router = createRouter({
       meta: { title: "歌单" },
     },
     {
+      // 插件来源的歌单（多一段 source），与上面的本地歌单路由区分开
+      path: "/playlist/:source/:id",
+      name: "sourcePlaylist",
+      component: () => import("@/views/PlaylistView.vue"),
+      meta: { title: "歌单" },
+    },
+    {
+      path: "/album/:source/:id",
+      name: "album",
+      component: () => import("@/views/AlbumView.vue"),
+      meta: { title: "专辑" },
+    },
+    {
+      path: "/artist/:source/:id",
+      name: "artist",
+      component: () => import("@/views/ArtistView.vue"),
+      meta: { title: "歌手" },
+    },
+    {
       path: "/plugins",
       name: "plugins",
       component: () => import("@/views/PluginsView.vue"),

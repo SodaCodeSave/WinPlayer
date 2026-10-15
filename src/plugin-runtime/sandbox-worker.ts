@@ -122,6 +122,10 @@ const INVOKEABLE_METHODS = new Set([
   "search",
   "getSongUrl",
   "getPlaylist",
+  // 专辑 / 歌手（能力：album、artist）
+  "getAlbum",
+  "getArtist",
+  "getArtistAlbums",
   "getRecommendations",
   "getLyrics",
   "getHotKeywords",

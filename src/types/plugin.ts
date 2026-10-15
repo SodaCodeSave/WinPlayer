@@ -14,6 +14,8 @@ export type PluginCapability =
   | "search"
   | "songUrl"
   | "playlist"
+  | "album"
+  | "artist"
   | "recommend"
   | "lyrics"
   | "hotKeywords"
@@ -93,6 +95,12 @@ export interface UnifiedTrack {
   cover?: string;
   /** 时长（毫秒） */
   duration?: number;
+  /**
+   * 所属专辑 ID（能力：album）。缺失时歌曲表里的专辑名退化为纯文本，不提供跳转
+   */
+  albumId?: string;
+  /** 各艺术家的 ID（能力：artist），与 artists 一一对应；缺失的位置同样退化为纯文本 */
+  artistIds?: string[];
   /** 来源插件 ID（主程序在返回给上层前统一补全） */
   sourceId?: string;
   /** 透传数据，仅插件自身可见 */
@@ -110,10 +118,46 @@ export interface UnifiedPlaylist {
   sourceId?: string;
 }
 
+/** 统一专辑结构（能力：album） */
+export interface UnifiedAlbum {
+  id: string;
+  name: string;
+  cover?: string;
+  /** 专辑简介（可选，详情页会做截断展示） */
+  description?: string;
+  trackCount?: number;
+  /** 发行时间（毫秒时间戳） */
+  publishTime?: number;
+  /** 专辑下的艺术家名，与 artistIds 对应 */
+  artistNames?: string[];
+  artistIds?: string[];
+  /** 唱片公司 */
+  company?: string;
+  /** 专辑类型，如「录音室版」 */
+  subType?: string;
+  sourceId?: string;
+}
+
+/** 统一艺术家结构（能力：artist） */
+export interface UnifiedArtist {
+  id: string;
+  name: string;
+  /** 头像（歌手页会拿它做 banner 背景） */
+  avatar?: string;
+  briefDesc?: string;
+  /** 别名，如 Jay Chou */
+  alias?: string[];
+  songCount?: number;
+  albumCount?: number;
+  sourceId?: string;
+}
+
 /** 搜索结果 */
 export interface SearchResult {
   songs?: UnifiedTrack[];
   playlists?: UnifiedPlaylist[];
+  albums?: UnifiedAlbum[];
+  artists?: UnifiedArtist[];
   total?: number;
   hasMore?: boolean;
 }
@@ -129,6 +173,24 @@ export interface SongUrlResult {
 /** 歌单详情（含曲目） */
 export interface PlaylistDetail extends UnifiedPlaylist {
   tracks: UnifiedTrack[];
+}
+
+/** 专辑详情（含曲目，能力：album） */
+export interface AlbumDetail extends UnifiedAlbum {
+  tracks: UnifiedTrack[];
+}
+
+/** 歌手详情（含热门歌曲，能力：artist）。完整作品请用 getArtistAlbums 分页拉取 */
+export interface ArtistDetail extends UnifiedArtist {
+  /** 服务端返回的热门歌曲（通常为前 50 首） */
+  hotTracks: UnifiedTrack[];
+}
+
+/** 歌手专辑列表（能力：artist） */
+export interface ArtistAlbumsResult {
+  albums: UnifiedAlbum[];
+  total?: number;
+  hasMore?: boolean;
 }
 
 /** 歌词（LRC 文本） */
@@ -242,7 +304,7 @@ export interface PluginContext {
 /** 插件搜索参数 */
 export interface PluginSearchParams {
   keyword: string;
-  type?: "song" | "playlist" | "album";
+  type?: "song" | "playlist" | "album" | "artist";
   page?: number;
   pageSize?: number;
 }
@@ -252,7 +314,7 @@ export interface PluginModule {
   /** 初始化（可选）。可在此读取 ctx.settings、发起请求预热等 */
   init?(ctx: PluginContext): Promise<void> | void;
 
-  /** 搜索（能力：search） */
+  /** 搜索（能力：search）。type 为空时返回单曲与歌单（对应搜索页默认两个 Tab） */
   search?(params: PluginSearchParams): Promise<SearchResult>;
 
   /** 获取播放直链（能力：songUrl）。参数 id 为 UnifiedTrack.id */
@@ -260,6 +322,15 @@ export interface PluginModule {
 
   /** 获取歌单详情（能力：playlist） */
   getPlaylist?(params: { id: string; page?: number }): Promise<PlaylistDetail | null>;
+
+  /** 获取专辑详情（能力：album）。返回的 tracks 里应尽量补全 albumId / artistIds */
+  getAlbum?(params: { id: string; page?: number }): Promise<AlbumDetail | null>;
+
+  /** 获取歌手详情 + 热门歌曲（能力：artist） */
+  getArtist?(params: { id: string }): Promise<ArtistDetail | null>;
+
+  /** 获取歌手的专辑列表，分页（能力：artist） */
+  getArtistAlbums?(params: { id: string; page?: number; pageSize?: number }): Promise<ArtistAlbumsResult | null>;
 
   /** 获取推荐内容（能力：recommend） */
   getRecommendations?(params?: { page?: number }): Promise<RecommendResult>;

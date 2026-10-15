@@ -19,7 +19,7 @@ WinPlayer 的音乐完全来自插件。插件负责把任意音乐来源（HTTP
 - 插件代码运行在 **Web Worker 沙箱**中：无 DOM、无 `window`、无法访问主程序状态
 - 插件的**所有网络请求**必须通过 `ctx.request()`，由 Rust 后端代理转发（无 CORS 限制，也无法绕过）
 - 插件只能访问自己的**私有存储** `ctx.storage`
-- 可调用的方法有白名单限制（`search` / `getSongUrl` / `getPlaylist` / `getRecommendations` / `getLyrics` / `getHotKeywords` / `getLoginQr` / `pollLogin` / `getLoginState` / `logout`）
+- 可调用的方法有白名单限制（`search` / `getSongUrl` / `getPlaylist` / `getAlbum` / `getArtist` / `getArtistAlbums` / `getRecommendations` / `getLyrics` / `getHotKeywords` / `getLoginQr` / `pollLogin` / `getLoginState` / `logout`）
 
 ## 插件包格式
 
@@ -51,7 +51,7 @@ my-plugin/
   "homepage": "https://...",      // 可选
   "main": "main.js",              // 可选，入口文件（默认 main.js，仅限插件目录内相对路径）
   "apiVersion": 1,                // 必填，插件协议版本（当前为 1）
-  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords", "playlist", "login"],
+  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords", "playlist", "album", "artist", "login"],
   "login": {                     // 可选，capabilities 含 "login" 时生效
     "credentialKey": "token",    // 凭证写入的设置项 key，默认 "credential"
     "pollInterval": 2000,        // 主程序轮询扫码状态的间隔（毫秒），默认 2000，最小 500
@@ -78,11 +78,18 @@ export default {
   /** 初始化（可选）。此处可读取设置、预热请求 */
   async init(ctx) {},
 
-  /** 搜索（能力：search） */
-  async search({ keyword, type = "song", page = 1, pageSize = 20 }) {
+  /**
+   * 搜索（能力：search）
+   *
+   * 主程序默认调用时不传 type（一次并行返回单曲 + 歌单）；
+   * 只有用户点开「专辑」「歌手」Tab 时才带 type 调用一次，因此这四种返回值都是可选的。
+   */
+  async search({ keyword, type, page = 1, pageSize = 20 }) {
     return {
       songs: [/* UnifiedTrack */],
       playlists: [/* UnifiedPlaylist */],
+      albums: [/* UnifiedAlbum，仅 type === "album" 时返回 */],
+      artists: [/* UnifiedArtist，仅 type === "artist" 时返回 */],
       total: 100,        // 可选
       hasMore: true,     // 可选
     };
@@ -97,6 +104,25 @@ export default {
   /** 歌单详情（能力：playlist） */
   async getPlaylist({ id, page }) {
     return { id, name, cover, description, trackCount, tracks: [/* UnifiedTrack */] };
+  },
+
+  /** 专辑详情（能力：album）。返回的曲目里尽量补全 albumId / artistIds，歌曲表会据此渲染跳转链接 */
+  async getAlbum({ id, page }) {
+    return {
+      id, name, cover, description, trackCount, publishTime,
+      artistNames: ["歌手名"], artistIds: ["歌手ID"],
+      tracks: [/* UnifiedTrack */],
+    };
+  },
+
+  /** 歌手详情 + 热门歌曲（能力：artist）。完整作品用 getArtistAlbums 分页拉取 */
+  async getArtist({ id }) {
+    return { id, name, avatar, briefDesc, alias: [], songCount, albumCount, hotTracks: [/* UnifiedTrack */] };
+  },
+
+  /** 歌手专辑列表（能力：artist），宿主滚动到底部时会带着 page 继续调用 */
+  async getArtistAlbums({ id, page, pageSize }) {
+    return { albums: [/* UnifiedAlbum */], total: 100, hasMore: true };
   },
 
   /** 推荐内容（能力：recommend）——显示在“推荐”页 */
@@ -175,6 +201,10 @@ export default {
   album?: string;      // 专辑名
   cover?: string;      // 封面图 URL
   duration?: number;   // 时长（毫秒）
+  // 能力：album / artist。填了这两个 ID，歌曲表里的歌手名、专辑名就会变成可点击的跳转入口；
+  // 缺失时退化为纯文本，不影响功能
+  albumId?: string;
+  artistIds?: string[];    // 与 artists 一一对应，某个位置为空串即该歌手不可跳转
   extra?: object;      // 透传数据，仅你自己可见（如原始 ID、版权信息）
 }
 
@@ -187,9 +217,37 @@ export default {
   trackCount?: number;
   creator?: string;
 }
+
+// UnifiedAlbum（能力：album）
+{
+  id: string;
+  name: string;
+  cover?: string;
+  description?: string;
+  trackCount?: number;
+  publishTime?: number;    // 毫秒时间戳
+  artistNames?: string[];
+  artistIds?: string[];    // 与 artistNames 对应，专辑页的歌手名据此跳转
+  company?: string;
+  subType?: string;        // 如「录音室版」
+}
+
+// UnifiedArtist（能力：artist）
+{
+  id: string;
+  name: string;
+  avatar?: string;         // 歌手页会拿它铺 banner 背景与圆形头像
+  briefDesc?: string;      // 歌手页只展示前两行
+  alias?: string[];
+  songCount?: number;
+  albumCount?: number;
+}
 ```
 
 > `sourceId` 由主程序自动补全，插件无需（也不应）设置。
+>
+> 路由约定：插件歌单 `/playlist/:source/:id`、专辑 `/album/:source/:id`、歌手 `/artist/:source/:id`，
+> 其中 `:source` 就是 `sourceId`。卡片与歌曲表的跳转都由主程序按这个约定拼 URL，插件只负责回传 ID。
 
 ### 上下文对象 ctx
 
