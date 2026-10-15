@@ -152,12 +152,49 @@ jobs:
               -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
-          {
-            echo "TAURI_ANDROID_KEYSTORE_PATH=$GITHUB_WORKSPACE/debug.keystore"
-            echo "TAURI_ANDROID_KEYSTORE_PASSWORD=android"
-            echo "TAURI_ANDROID_KEY_ALIAS=androiddebugkey"
-            echo "TAURI_ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD=android"
-          } >> "$GITHUB_ENV"
+
+      # Tauri v2 签名方式（官方文档）：gen/android/keystore.properties + Gradle release signingConfig。
+      # gen/android 由 CI 每次现场生成，模板不含签名配置，需自动打补丁。
+      - name: Configure Android signing
+        run: |
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          password=android
+          keyAlias=androiddebugkey
+          storeFile=$GITHUB_WORKSPACE/debug.keystore
+          EOF
+          python3 - <<'PYEOF'
+          import pathlib
+
+          p = pathlib.Path("src-tauri/gen/android/app/build.gradle.kts")
+          s = p.read_text(encoding="utf-8")
+
+          if "import java.io.FileInputStream" not in s:
+              s = s.replace("import java.util.Properties", "import java.io.FileInputStream\nimport java.util.Properties", 1)
+
+          if "signingConfigs {" not in s:
+              lines = [
+                  "    signingConfigs {",
+                  '        create("release") {',
+                  '            val keystorePropertiesFile = rootProject.file("keystore.properties")',
+                  "            val keystoreProperties = Properties()",
+                  "            if (keystorePropertiesFile.exists()) {",
+                  "                keystoreProperties.load(FileInputStream(keystorePropertiesFile))",
+                  "            }",
+                  '            keyAlias = keystoreProperties["keyAlias"]?.toString()',
+                  '            keyPassword = keystoreProperties["password"]?.toString()',
+                  '            storeFile = (keystoreProperties["storeFile"] as String?)?.let { file(it) }',
+                  '            storePassword = keystoreProperties["password"]?.toString()',
+                  "        }",
+                  "    }",
+              ]
+              s = s.replace("    buildTypes {", "\n".join(lines) + "\n\n    buildTypes {", 1)
+
+          if 'signingConfig = signingConfigs.getByName("release")' not in s:
+              s = s.replace('        getByName("release") {', '        getByName("release") {\n            signingConfig = signingConfigs.getByName("release")', 1)
+
+          p.write_text(s, encoding="utf-8")
+          print("gradle signing config patched")
+          PYEOF
 
       - name: Upload keystore artifact
         if: env.KEYSTORE_FROM_SECRET != 'true'
