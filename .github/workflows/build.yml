@@ -136,7 +136,36 @@ jobs:
         if: hashFiles('src-tauri/gen/android/**') == ''
         run: pnpm tauri android init
 
-      # 不配置签名，release 构建将使用 debug 密钥签名（仅供测试安装，不可上架商店）
+      # 优先使用 Secret 中的固定 debug 密钥（ANDROID_DEBUG_KEYSTORE_BASE64）；
+      # 未配置时现场生成并作为 Artifact 上传，下载一次回填为 Secret 后签名即固定
+      - name: Import or generate debug keystore
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 -d > debug.keystore
+          else
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          {
+            echo "TAURI_ANDROID_KEYSTORE_PATH=$GITHUB_WORKSPACE/debug.keystore"
+            echo "TAURI_ANDROID_KEYSTORE_PASSWORD=android"
+            echo "TAURI_ANDROID_KEY_ALIAS=androiddebugkey"
+            echo "TAURI_ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+
+      - name: Upload keystore artifact
+        if: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-keystore
+          path: debug.keystore
+          if-no-files-found: error
+
       - name: Build Android APK
         run: pnpm tauri android build --apk --split-per-abi
 

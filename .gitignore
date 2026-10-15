@@ -39,6 +39,10 @@ coverage/
 .env.*
 !.env.example
 
+# --- Android debug keystore（签名密钥，禁止入库）---
+debug.keystore
+debug.keystore.b64
+
 plugins/netease-source/
 plugins/netease-source.zip
 plugins/*.zip
