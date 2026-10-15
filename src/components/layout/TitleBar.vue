@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { PersonPicture } from "winuionweb";
+import CachedImage from "@/components/common/CachedImage.vue";
 import { pluginDisplayName, usePluginsStore, type AppAvatar } from "@/stores/plugins";
 
 const router = useRouter();
@@ -96,7 +97,7 @@ function submitSearch() {
     <div class="titlebar-right">
       <div class="avatar-wrap">
         <button class="avatar-button" :title="avatarTitle">
-          <img v-if="avatarUrl" class="avatar-image" :src="avatarUrl" alt="" draggable="false" />
+          <CachedImage v-if="avatarUrl" class="avatar-image" :src="avatarUrl" />
           <PersonPicture v-else DisplayName="音" :Width="28" :Height="28" FontSize="12" />
         </button>
       </div>

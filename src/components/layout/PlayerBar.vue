@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { Slider } from "winuionweb";
+import CachedImage from "@/components/common/CachedImage.vue";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { PLAY_MODE_LABEL, formatTime, trackArtist, trackTitle } from "@/types/player";
@@ -75,10 +76,9 @@ async function toggleLikeCurrent() {
     <!-- 左：当前曲目 -->
     <div class="now-playing">
       <div class="cover">
-        <img
+        <CachedImage
           v-if="player.currentTrack?.cover"
           :src="player.currentTrack.cover"
-          alt=""
           class="cover-img"
         />
         <span v-else class="wp-icon cover-placeholder">&#xE8D6;</span>

@@ -12,6 +12,7 @@ import { usePlayerStore } from "@/stores/player";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import SongTable from "@/components/common/SongTable.vue";
 import MediaCard from "@/components/common/MediaCard.vue";
+import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import type { UnifiedAlbum, UnifiedArtist, UnifiedTrack } from "@/types/plugin";
 
@@ -141,7 +142,7 @@ function shufflePlay() {
         <div class="banner-scrim"></div>
         <div class="banner-content">
           <div class="banner-avatar-wrap">
-            <img v-if="artist.avatar" :src="artist.avatar" alt="" class="banner-avatar" />
+            <CachedImage v-if="artist.avatar" :src="artist.avatar" class="banner-avatar" />
             <span v-else class="wp-icon banner-avatar-placeholder">&#xE77B;</span>
           </div>
           <div class="banner-meta">

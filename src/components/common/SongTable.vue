@@ -8,6 +8,7 @@ import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
 import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import CachedImage from "@/components/common/CachedImage.vue";
 import { openPlaylistPicker } from "@/services/playlistPicker";
 import { formatDuration, trackTitle } from "@/types/player";
 import type { UnifiedTrack } from "@/types/plugin";
@@ -174,7 +175,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
         <span class="index-hover wp-icon" @click="playRow(index)">&#xE768;</span>
       </span>
       <span class="col-title">
-        <img v-if="row.track.cover" :src="row.track.cover" alt="" class="row-cover" loading="lazy" decoding="async" />
+        <CachedImage v-if="row.track.cover" :src="row.track.cover" class="row-cover" />
         <span class="title-main">
           <span class="title-text ellipsis">{{ trackTitle(row.track) }}</span>
           <span v-if="row.track.alias" class="title-alias ellipsis">（{{ row.track.alias }}）</span>

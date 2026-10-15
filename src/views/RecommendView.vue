@@ -8,6 +8,7 @@ import type { RecommendResult } from "@/types/plugin";
 import { getCachedData, setCachedData } from "@/services/cache";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import CachedImage from "@/components/common/CachedImage.vue";
 import { ProgressRing } from "winuionweb";
 
 const router = useRouter();
@@ -128,7 +129,7 @@ onMounted(loadWithCache);
             @dblclick="playFromSource(section, index)"
           >
             <div class="song-cover">
-              <img v-if="song.cover" :src="song.cover" alt="" class="cover-img" loading="lazy" decoding="async" />
+              <CachedImage v-if="song.cover" :src="song.cover" class="cover-img" />
               <span v-else class="wp-icon cover-placeholder">&#xE8D6;</span>
               <button class="song-play" title="播放" @click="playFromSource(section, index)">
                 <span class="wp-icon">&#xE768;</span>

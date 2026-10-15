@@ -25,6 +25,7 @@ pub fn run() {
             .invoke_handler(tauri::generate_handler![
                 commands::cache::cache_stats,
                 commands::cache::cache_clear,
+                commands::cache::image_cache_prefetch,
                 commands::http::http_fetch,
                 commands::plugins::plugin_list,
                 commands::plugins::plugin_read_code,

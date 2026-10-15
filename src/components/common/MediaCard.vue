@@ -13,6 +13,7 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
+import CachedImage from "@/components/common/CachedImage.vue";
 import type { UnifiedAlbum, UnifiedArtist, UnifiedPlaylist } from "@/types/plugin";
 
 const props = defineProps<{
@@ -88,7 +89,7 @@ function open() {
 <template>
   <button class="media-card" :title="tooltip" @click="open">
     <div class="card-cover" :class="{ round: kind === 'artist' }">
-      <img v-if="cover" :src="cover" alt="" class="cover-img" loading="lazy" decoding="async" />
+      <CachedImage v-if="cover" :src="cover" class="cover-img" />
       <span v-else class="wp-icon cover-placeholder">{{ placeholderIcon }}</span>
     </div>
     <div class="card-name ellipsis">{{ title }}</div>

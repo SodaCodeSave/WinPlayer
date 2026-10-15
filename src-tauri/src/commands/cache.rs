@@ -7,27 +7,29 @@
 //!
 //! 页面数据缓存（主页推荐/歌单详情）存于 SQLite settings 表，由前端 services/cache.ts 处理。
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::Manager;
-use tokio::sync::Semaphore;
+use tokio::sync::{Notify, Semaphore};
 
 /// 压缩后最长边（界面最大展示约 160px，2x 缩放下 512 足够清晰）
 const MAX_DIMENSION: u32 = 512;
 /// JPEG 压缩质量
 const JPEG_QUALITY: u8 = 75;
-/// 同一张图并发请求时的等待上限（对方正在下载）
-const DEDUP_WAIT: Duration = Duration::from_secs(5);
+/// 等待其它请求完成下载的上限（下载者受并发限制排队，需留足等待时间）
+const INFLIGHT_WAIT: Duration = Duration::from_secs(30);
 /// 下载+压缩的并发上限：全尺寸 JPEG 解码很吃 CPU，不限制时长列表会打满所有核心
 const MAX_CONCURRENT_FETCH: usize = 4;
 
-fn pending() -> &'static Mutex<HashSet<String>> {
-    static PENDING: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    PENDING.get_or_init(|| Mutex::new(HashSet::new()))
+/// 正在下载中的图片：hash -> 完成通知。等待者收到通知后重读磁盘，
+/// 避免同一张图被并发下载多次。
+fn inflight() -> &'static Mutex<HashMap<String, Arc<Notify>>> {
+    static INFLIGHT: OnceLock<Mutex<HashMap<String, Arc<Notify>>>> = OnceLock::new();
+    INFLIGHT.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn fetch_limiter() -> &'static Semaphore {
@@ -109,31 +111,51 @@ async fn process_request<R: tauri::Runtime>(
         return serve_jpeg(bytes);
     }
 
-    // 去重：同一张图正在被其它请求下载时，轮询等待其落盘
-    let mut acquired = false;
-    {
-        let mut set = pending().lock().expect("pending lock poisoned");
-        if set.insert(hash_url(&source_url)) {
-            acquired = true;
+    // 去重：同一张图只允许一个请求下载，其余等待完成通知后再读磁盘
+    let hash = hash_url(&source_url);
+    let (is_fetcher, notify) = {
+        let mut map = inflight().lock().expect("inflight lock poisoned");
+        match map.get(&hash) {
+            Some(n) => (false, n.clone()),
+            None => {
+                let n = Arc::new(Notify::new());
+                map.insert(hash.clone(), n.clone());
+                (true, n)
+            }
         }
-    }
-    if !acquired {
-        let deadline = tokio::time::Instant::now() + DEDUP_WAIT;
-        while tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+
+    if !is_fetcher {
+        // 等待下载者完成：收到通知或下载者移除自身后重读磁盘。
+        // 轮询兜底，防止通知竞态导致无限等待。
+        let deadline = tokio::time::Instant::now() + INFLIGHT_WAIT;
+        loop {
             if let Ok(bytes) = tokio::fs::read(&path).await {
                 return serve_jpeg(bytes);
             }
+            let still_inflight = inflight()
+                .lock()
+                .expect("inflight lock poisoned")
+                .contains_key(&hash);
+            if !still_inflight {
+                // 下载者已结束且磁盘无文件（下载失败）→ 交给前端回退远程图
+                return not_found("fetch failed");
+            }
+            if tokio::time::Instant::now() >= deadline {
+                eprintln!("[cachedimg] inflight wait timeout: {source_url}");
+                return not_found("image fetch in progress");
+            }
+            let _ = tokio::time::timeout(Duration::from_secs(1), notify.notified()).await;
         }
-        eprintln!("[cachedimg] dedup wait timeout: {source_url}");
-        return not_found("image fetch in progress");
     }
 
     let result = fetch_and_cache(&source_url, &path).await;
-    pending()
+    // 先移除再通知：新请求会重新成为下载者，等待者则自行重读磁盘
+    inflight()
         .lock()
-        .expect("pending lock poisoned")
-        .remove(&hash_url(&source_url));
+        .expect("inflight lock poisoned")
+        .remove(&hash);
+    notify.notify_waiters();
 
     match result {
         Ok(bytes) => serve_jpeg(bytes),
@@ -154,7 +176,7 @@ fn serve_jpeg(bytes: Vec<u8>) -> tauri::http::Response<Vec<u8>> {
         .unwrap()
 }
 
-/// 下载 → 解码 → 压缩 → 写入磁盘；解码失败时返回原始字节（不落盘）
+/// 下载 → 解码 → 压缩 → 写入磁盘（失败自动重试一次，解码失败除外）
 async fn fetch_and_cache(source_url: &str, path: &PathBuf) -> Result<Vec<u8>, String> {
     // 限制并发：解码压缩是 CPU 大户，排队执行避免卡顿
     let _permit = fetch_limiter()
@@ -162,6 +184,26 @@ async fn fetch_and_cache(source_url: &str, path: &PathBuf) -> Result<Vec<u8>, St
         .await
         .map_err(|_| "并发限制器已关闭".to_string())?;
 
+    let mut last_err = String::new();
+    for attempt in 0..2 {
+        match fetch_once(source_url, path).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(e) => {
+                // 内容不是可解码图片（如 SVG），重试也不会成功
+                if e.contains("图片解码失败") {
+                    return Err(e);
+                }
+                last_err = e;
+                if attempt == 0 {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
+async fn fetch_once(source_url: &str, path: &PathBuf) -> Result<Vec<u8>, String> {
     let response = http_client()
         .get(source_url)
         .send()
@@ -256,4 +298,21 @@ pub async fn cache_clear(app: tauri::AppHandle) -> Result<CacheStats, String> {
             .map_err(|e| format!("删除缓存目录失败: {e}"))?;
     }
     Ok(stats)
+}
+
+/// 后台预取：把远程图片下载压缩进缓存（已缓存则直接返回）。
+/// 供前端在「协议请求失败、回退显示远程原图」时调用，保证下次能命中缓存。
+#[tauri::command]
+pub async fn image_cache_prefetch(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("unsupported scheme".to_string());
+    }
+    let path = image_path(&app, &url)?;
+    if tokio::fs::metadata(&path).await.is_ok() {
+        return Ok(());
+    }
+    if let Some(dir) = path.parent() {
+        let _ = tokio::fs::create_dir_all(dir).await;
+    }
+    fetch_and_cache(&url, &path).await.map(|_| ())
 }

@@ -15,6 +15,7 @@ import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import { toast } from "@/services/toast";
 import { getCachedData, setCachedData } from "@/services/cache";
 import SongTable from "@/components/common/SongTable.vue";
+import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import type { PlaylistDetail, UnifiedTrack } from "@/types/plugin";
 
@@ -191,7 +192,7 @@ async function openDelete() {
     <template v-if="header">
       <div class="wp-page-header">
         <div class="header-cover">
-          <img v-if="header.cover" :src="header.cover" alt="" class="cover-img" />
+          <CachedImage v-if="header.cover" :src="header.cover" class="cover-img" />
           <span v-else class="wp-icon">&#xE8FD;</span>
         </div>
         <div class="header-meta">
