@@ -4,6 +4,9 @@ import { RouterView } from "vue-router";
 import TitleBar from "@/components/layout/TitleBar.vue";
 import SideNav from "@/components/layout/SideNav.vue";
 import PlayerBar from "@/components/layout/PlayerBar.vue";
+import MobileTabBar from "@/components/layout/MobileTabBar.vue";
+import MobilePlayerBar from "@/components/layout/MobilePlayerBar.vue";
+import { useIsMobile } from "@/composables/useIsMobile";
 import ToastHost from "@/components/common/ToastHost.vue";
 import ContextMenuHost from "@/components/common/ContextMenuHost.vue";
 import PlaylistPickerHost from "@/components/common/PlaylistPickerHost.vue";
@@ -17,6 +20,7 @@ const settings = useSettingsStore();
 const plugins = usePluginsStore();
 const library = useLibraryStore();
 const player = usePlayerStore();
+const isMobile = useIsMobile();
 
 // 注册于 load() 之前：设置读出后立即把开关同步给系统媒体控件（SMTC）
 const stopSmtcWatch = watch(
@@ -41,9 +45,9 @@ onUnmounted(() => {
 
 <template>
   <div class="app-shell">
-    <TitleBar class="app-titlebar" />
+    <TitleBar v-if="!isMobile" class="app-titlebar" />
     <div class="app-body">
-      <SideNav class="app-sidenav" />
+      <SideNav v-if="!isMobile" class="app-sidenav" />
       <main class="app-content">
         <router-view v-slot="{ Component }">
           <transition name="wp-route" mode="out-in">
@@ -52,7 +56,10 @@ onUnmounted(() => {
         </router-view>
       </main>
     </div>
-    <PlayerBar class="app-playerbar" />
+    <!-- 移动端：迷你播放条 + 底部导航栏；桌面端：完整播放条 -->
+    <MobilePlayerBar v-if="isMobile" />
+    <MobileTabBar v-if="isMobile" />
+    <PlayerBar v-if="!isMobile" class="app-playerbar" />
     <ToastHost />
     <ContextMenuHost />
     <PlaylistPickerHost />

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { usePluginsStore } from "@/stores/plugins";
 import { usePlayerStore } from "@/stores/player";
 import SongTable from "@/components/common/SongTable.vue";
+import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
 import MediaCard from "@/components/common/MediaCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
@@ -137,6 +138,7 @@ onMounted(() => {
 
 <template>
   <div class="wp-page">
+    <MobilePageHeader />
     <div class="wp-page-header search-header">
       <h1 class="wp-page-title">搜索</h1>
       <div class="search-field">

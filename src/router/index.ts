@@ -13,6 +13,13 @@ const router = createRouter({
       meta: { title: "推荐" },
     },
     {
+      // 「我的」页：头像 + 所有歌单（移动端底部导航入口，桌面端可达但不入侧边栏）
+      path: "/mine",
+      name: "mine",
+      component: () => import("@/views/MineView.vue"),
+      meta: { title: "我的" },
+    },
+    {
       path: "/search",
       name: "search",
       component: () => import("@/views/SearchView.vue"),

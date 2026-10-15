@@ -26,14 +26,19 @@ export const contextMenuState = reactive<ContextMenuState>({
   items: [],
 });
 
+/** 在指定坐标打开内嵌菜单（长按等无鼠标事件的触摸场景） */
+export function openContextMenuAt(x: number, y: number, items: ContextMenuItem[]): void {
+  if (!items.length) return;
+  contextMenuState.x = x;
+  contextMenuState.y = y;
+  contextMenuState.items = items;
+  contextMenuState.visible = true;
+}
+
 /** 在鼠标位置打开内嵌右键菜单 */
 export function openContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
   event.preventDefault();
-  if (!items.length) return;
-  contextMenuState.x = event.clientX;
-  contextMenuState.y = event.clientY;
-  contextMenuState.items = items;
-  contextMenuState.visible = true;
+  openContextMenuAt(event.clientX, event.clientY, items);
 }
 
 export function closeContextMenu(): void {
