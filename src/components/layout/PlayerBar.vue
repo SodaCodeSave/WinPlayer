@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { Slider } from "winuionweb";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { PLAY_MODE_LABEL, formatTime, trackArtist, trackTitle } from "@/types/player";
-import WinSlider from "@/components/common/WinSlider.vue";
 import QueuePanel from "./QueuePanel.vue";
 import LyricsPanel from "./LyricsPanel.vue";
 
 const player = usePlayerStore();
 const library = useLibraryStore();
 
+/** 拖动进度滑块时的本地预览值（拖动结束才 seek，期间屏蔽 timeupdate 覆盖） */
 const draggingSeek = ref(false);
+const seekLocal = ref(0);
+/** 本次指针交互是否产生过 update:Value（防止空区域按下用陈旧值 seek） */
+const seekTouched = ref(false);
 
-const progressMax = computed(() => (player.duration > 0 ? player.duration : 0));
+const seekValue = computed(() => (draggingSeek.value ? seekLocal.value : player.currentTime));
+const seekTime = computed(() => formatTime(seekValue.value));
+const progressMax = computed(() => (player.duration > 0 ? player.duration : 1));
 const liked = computed(() => (player.currentTrack ? library.isLiked(player.currentTrack) : false));
 
 const modeIcon = computed(() => {
@@ -28,9 +34,35 @@ const modeIcon = computed(() => {
   }
 });
 
-function onSeekDragEnd(value: number) {
+function onSeekInput(value: number): void {
+  const v = Number(value);
+  if (draggingSeek.value) {
+    seekTouched.value = true;
+    seekLocal.value = v;
+  } else {
+    player.seek(v); // 键盘等非指针变更：立即跳转
+  }
+}
+
+/** capture 阶段先于滑块内部处理置位，拖动中的 update:Value 全部进本地预览 */
+function onSeekPointerDown(): void {
+  if (player.duration <= 0) return;
+  draggingSeek.value = true;
+  seekTouched.value = false;
+}
+
+/** 指针抬起：提交最终预览值（含点击直接跳转） */
+function onSeekPointerUp(): void {
+  if (!draggingSeek.value) return;
   draggingSeek.value = false;
-  player.seek(value);
+  if (!seekTouched.value) return;
+  seekTouched.value = false;
+  player.seek(seekLocal.value);
+}
+
+function onSeekPointerCancel(): void {
+  draggingSeek.value = false;
+  seekTouched.value = false;
 }
 
 async function toggleLikeCurrent() {
@@ -104,20 +136,26 @@ async function toggleLikeCurrent() {
         </button>
       </div>
       <div class="seek-row">
-        <span class="time">{{ formatTime(player.currentTime * 1000) }}</span>
-        <WinSlider
+        <span class="time">{{ seekTime }}</span>
+        <div
           class="seek-slider"
-          :model-value="player.currentTime"
-          :min="0"
-          :max="progressMax"
-          :step="0.5"
-          :disabled="!player.duration"
-          :defer-sync="true"
-          @update:model-value="player.seek($event)"
-          @dragstart="draggingSeek = true"
-          @dragend="onSeekDragEnd"
-        />
-        <span class="time">{{ formatTime(player.duration * 1000) }}</span>
+          @pointerdown.capture="onSeekPointerDown"
+          @pointerup="onSeekPointerUp"
+          @pointercancel="onSeekPointerCancel"
+        >
+          <Slider
+            :Value="seekValue"
+            :Minimum="0"
+            :Maximum="progressMax"
+            :StepFrequency="0.5"
+            :SmallChange="0.5"
+            :LargeChange="5"
+            :IsEnabled="player.duration > 0"
+            :ThumbToolTipValueConverter="formatTime"
+            @update:Value="onSeekInput"
+          />
+        </div>
+        <span class="time">{{ formatTime(player.duration) }}</span>
       </div>
     </div>
 
@@ -135,13 +173,14 @@ async function toggleLikeCurrent() {
         <button class="wp-icon-button" :title="player.muted ? '取消静音' : '静音'" @click="player.toggleMute">
           <span class="wp-icon">{{ player.muted || player.volume === 0 ? "&#xE74F;" : "&#xE767;" }}</span>
         </button>
-        <WinSlider
+        <Slider
           class="volume-slider"
-          :model-value="player.muted ? 0 : player.volume"
-          :min="0"
-          :max="1"
-          :step="0.01"
-          @update:model-value="player.setVolume"
+          :Value="player.muted ? 0 : player.volume"
+          :Minimum="0"
+          :Maximum="1"
+          :StepFrequency="0.01"
+          :IsThumbToolTipEnabled="false"
+          @update:Value="player.setVolume"
         />
       </div>
     </div>
@@ -295,6 +334,12 @@ async function toggleLikeCurrent() {
 
 .seek-slider {
   flex: 1;
+  min-width: 0;
+}
+
+/* Slider 根节点由组件 class 转发，确保撑满包裹层 */
+.seek-slider :deep(.win-slider-root) {
+  width: 100%;
 }
 
 /* ---------------- 右：音量/队列 ---------------- */
