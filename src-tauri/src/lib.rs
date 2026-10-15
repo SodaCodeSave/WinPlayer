@@ -12,6 +12,8 @@ fn db_migrations() -> Vec<Migration> {
     }]
 }
 
+// 移动端通过动态库入口启动，需要导出 tauri 的 mobile entry point 符号
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = commands::cache::register(
         tauri::Builder::default()
