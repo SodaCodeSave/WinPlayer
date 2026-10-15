@@ -19,7 +19,7 @@ WinPlayer 的音乐完全来自插件。插件负责把任意音乐来源（HTTP
 - 插件代码运行在 **Web Worker 沙箱**中：无 DOM、无 `window`、无法访问主程序状态
 - 插件的**所有网络请求**必须通过 `ctx.request()`，由 Rust 后端代理转发（无 CORS 限制，也无法绕过）
 - 插件只能访问自己的**私有存储** `ctx.storage`
-- 可调用的方法有白名单限制（`search` / `getSongUrl` / `getPlaylist` / `getAlbum` / `getArtist` / `getArtistAlbums` / `getRecommendations` / `getLyrics` / `getHotKeywords` / `getLoginQr` / `pollLogin` / `getLoginState` / `logout`）
+- 可调用的方法有白名单限制（`search` / `getSongUrl` / `getPlaylist` / `getAlbum` / `getArtist` / `getArtistAlbums` / `getRecommendations` / `getLyrics` / `getHotKeywords` / `getLoginQr` / `pollLogin` / `getLoginState` / `logout` / `getAvatar` / `getUserPlaylists` / `addToUserPlaylist` / `removeFromUserPlaylist`）
 
 ## 插件包格式
 
@@ -51,7 +51,7 @@ my-plugin/
   "homepage": "https://...",      // 可选
   "main": "main.js",              // 可选，入口文件（默认 main.js，仅限插件目录内相对路径）
   "apiVersion": 1,                // 必填，插件协议版本（当前为 1）
-  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords", "playlist", "album", "artist", "login"],
+  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords", "playlist", "album", "artist", "login", "avatar", "myPlaylists"],
   "login": {                     // 可选，capabilities 含 "login" 时生效
     "credentialKey": "token",    // 凭证写入的设置项 key，默认 "credential"
     "pollInterval": 2000,        // 主程序轮询扫码状态的间隔（毫秒），默认 2000，最小 500
@@ -169,6 +169,28 @@ export default {
   /** 退出登录。凭证由主程序从设置项中清除，插件不必自己持久化 */
   async logout() {},
 
+  /* ---------- 以下均为可选，capabilities 含对应能力时实现 ---------- */
+
+  /** 提供头像（能力：avatar）。主程序在窗口右上角预留的头像处展示；未登录/无头像时返回 null */
+  async getAvatar() {
+    return {
+      image: "https://example.com/avatar.jpg", // 支持 http(s) URL 或 data: URI（来源有防盗链时用 data URI）
+      label: "用户昵称",                        // 可选，悬停提示
+    };
+    // return null; // 不提供头像，主程序回退默认占位
+  },
+
+  /** 平台个人歌单列表（能力：myPlaylists）。返回账号创建的 + 收藏的歌单；未登录时抛出错误或返回空数组 */
+  async getUserPlaylists() {
+    return [/* UnifiedPlaylist[] */];
+  },
+
+  /** 把歌曲加入平台歌单（能力：myPlaylists）。失败时抛出错误，主程序会 toast 提示 */
+  async addToUserPlaylist({ playlistId, trackId }) {},
+
+  /** 把歌曲从平台歌单移除（能力：myPlaylists）。失败时抛出错误 */
+  async removeFromUserPlaylist({ playlistId, trackId }) {},
+
   /** 卸载/重载前清理（可选） */
   async dispose() {},
 };
@@ -190,6 +212,30 @@ export default {
 - 凭证写入会重建 Worker，因此主程序在收到 `success` 后**不再继续轮询**
 - 凭证回传的格式不要求 JSON，登录态查询（`getLoginState`）才需要结构化的 `profile`
 
+### 头像（能力：avatar）
+
+声明 `"avatar"` 能力并实现 `getAvatar()` 后，主程序会把返回的图片显示在**窗口右上角预留的头像处**：
+
+- 按插件启用顺序取第一个成功返回结果的插件；未登录/无头像返回 `null` 时继续找下一个，全部为空则回退默认占位头像
+- `image` 直接用作 `<img src>`，支持 http(s) URL 或 `data:` URI；若来源 CDN 有防盗链（Referer 校验），请改为在插件内下载后回传 `data:` URI（`responseType: "base64"`）
+- `label` 建议传用户昵称，会拼进悬停提示
+- 插件启停、配置变更（如 Cookie 更新）会触发主程序重新调用 `getAvatar()`
+
+### 个人歌单（能力：myPlaylists）
+
+声明 `"myPlaylists"` 能力后，主程序会在侧边栏展示**「平台歌单」分组**，把插件平台账号的歌单直接列为导航项：
+
+1. 主程序调用 `getUserPlaylists()` 聚合各插件结果（挂载时、插件配置变化时、用户点同步按钮时）
+2. 用户点击歌单项进入歌单详情页，曲目走常规的 `getPlaylist()` 加载（个人歌单通常就是平台歌单 ID，无需新接口）
+3. 歌单详情页对这类歌单启用编辑：移除歌曲调用 `removeFromUserPlaylist({ playlistId, trackId })`
+4. 歌曲表的「添加到歌单」选择器会列出平台歌单，选中后调用 `addToUserPlaylist({ playlistId, trackId })`
+
+要点：
+
+- 未登录时 `getUserPlaylists()` 抛出错误即可，主程序会把错误显示在对应插件的分组内，不影响其它插件
+- 增删失败时抛出带可读信息的 `Error`（如「歌曲已在歌单里」），主程序会原样 toast 给用户
+- 歌单 ID 必须与 `getUserPlaylists()` 返回的 `UnifiedPlaylist.id` 一致，主程序按它回传 `playlistId`
+
 ### 统一数据格式
 
 ```ts
@@ -201,6 +247,8 @@ export default {
   album?: string;      // 专辑名
   cover?: string;      // 封面图 URL
   duration?: number;   // 时长（毫秒）
+  alias?: string;      // 歌曲别名（如译名/港台名）。有值时歌曲表在标题旁以浅色括号显示，空间不足时优先截断
+  vip?: boolean;       // 是否需要 VIP。true 时歌曲标题最右侧显示 VIP 标识（空间不足时最后截断）；不传则不显示
   // 能力：album / artist。填了这两个 ID，歌曲表里的歌手名、专辑名就会变成可点击的跳转入口；
   // 缺失时退化为纯文本，不影响功能
   albumId?: string;
@@ -331,7 +379,7 @@ export default {
 4. 修改插件后重新安装（同 ID 覆盖安装）即可生效
 
 > 仓库内 `plugins/netease-source`（网易云音乐音源）是一个调用真实第三方 API 的完整示例，
-> 涵盖分页搜索、直链换取、批量补全曲目与错误码处理，可作为接入真实来源的参考。
+> 涵盖分页搜索、直链换取、批量补全曲目、错误码处理、Cookie 登录、头像与个人歌单增删，可作为接入真实来源的参考。
 
 ## 常见问题
 

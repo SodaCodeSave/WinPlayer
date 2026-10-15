@@ -2,13 +2,13 @@
 /**
  * 歌曲列表（WinUI ListView 风格）
  */
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
-import { ContentDialog } from "winuionweb";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
-import { toast } from "@/services/toast";
+import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { openPlaylistPicker } from "@/services/playlistPicker";
 import { formatDuration, trackTitle } from "@/types/player";
 import type { UnifiedTrack } from "@/types/plugin";
 
@@ -101,28 +101,7 @@ function addSingle(track: UnifiedTrack) {
   player.addToQueue([track]);
 }
 
-/* ------------------------------ 添加到歌单 ------------------------------ */
-
-/** 歌单选项（本地歌单 + 各插件的平台个人歌单） */
-interface PlaylistOption {
-  key: string;
-  name: string;
-  meta: string;
-  kind: "local" | "remote";
-  playlistId: string;
-  sourceId?: string;
-}
-
-interface PickerDialogRef {
-  ShowAsync: () => Promise<string>;
-  Hide: () => void;
-}
-
-const addDialogRef = ref<PickerDialogRef | null>(null);
-const pendingTrack = ref<UnifiedTrack | null>(null);
-const pickerLoading = ref(false);
-const pickerBusy = ref(false);
-const pickerOptions = ref<PlaylistOption[]>([]);
+/* ------------------------------ 右键菜单 ------------------------------ */
 
 const canAddToPlaylist = computed(
   () =>
@@ -130,66 +109,40 @@ const canAddToPlaylist = computed(
     plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
 );
 
-async function openAddDialog(track: UnifiedTrack) {
-  pendingTrack.value = track;
-  pickerOptions.value = library.playlists.map((p) => ({
-    key: `local:${p.id}`,
-    name: p.name,
-    meta: p.trackCount ? `${p.trackCount} 首 · 本地` : "本地歌单",
-    kind: "local",
-    playlistId: String(p.id),
-  }));
-  pickerLoading.value = plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists"));
-  pickerBusy.value = false;
-
-  const dialog = addDialogRef.value;
-  if (!dialog) return;
-  const shown = dialog.ShowAsync();
-  // 平台歌单实时拉取（单个插件失败不影响本地歌单可选）
-  try {
-    const groups = await plugins.getUserPlaylistsAll();
-    const remoteOptions: PlaylistOption[] = [];
-    for (const group of groups) {
-      for (const p of group.result ?? []) {
-        remoteOptions.push({
-          key: `${group.record.entry.id}:${p.id}`,
-          name: p.name,
-          meta: [
-            group.record.entry.manifest.name,
-            p.trackCount ? `${p.trackCount} 首` : "",
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          kind: "remote",
-          playlistId: p.id,
-          sourceId: group.record.entry.id,
-        });
-      }
-    }
-    pickerOptions.value = [...pickerOptions.value, ...remoteOptions];
-  } finally {
-    pickerLoading.value = false;
+/** 行右键菜单：添加到歌单 / 添加到我喜欢 / 移除 / 添加到播放队列 */
+function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
+  const liked = library.isLiked(track);
+  const items: ContextMenuItem[] = [];
+  if (canAddToPlaylist.value) {
+    items.push({
+      key: "playlist",
+      label: "添加到歌单",
+      icon: "&#xE8FD;",
+      action: () => openPlaylistPicker(track),
+    });
   }
-  await shown;
-}
-
-async function pickPlaylist(option: PlaylistOption) {
-  const track = pendingTrack.value;
-  if (!track || pickerBusy.value) return;
-  pickerBusy.value = true;
-  try {
-    if (option.kind === "local") {
-      await library.addTracksToPlaylist(Number(option.playlistId), [track]);
-    } else if (option.sourceId) {
-      await plugins.addToUserPlaylist(option.sourceId, option.playlistId, track.id);
-    }
-    toast(`已添加到「${option.name}」`, "success");
-    addDialogRef.value?.Hide();
-  } catch (error) {
-    toast(error instanceof Error ? error.message : String(error), "error");
-  } finally {
-    pickerBusy.value = false;
+  items.push({
+    key: "like",
+    label: liked ? "取消喜欢" : "添加到我喜欢",
+    icon: liked ? "&#xE735;" : "&#xE734;",
+    action: () => library.toggleLike(track),
+  });
+  items.push({
+    key: "queue",
+    label: "添加到播放队列",
+    icon: "&#xE710;",
+    action: () => addSingle(track),
+  });
+  if (props.removable) {
+    items.push({
+      key: "remove",
+      label: "移除",
+      icon: "&#xE74D;",
+      danger: true,
+      action: () => emit("remove", track),
+    });
   }
+  openContextMenu(event, items);
 }
 </script>
 
@@ -213,6 +166,7 @@ async function pickPlaylist(option: PlaylistOption) {
       class="table-row"
       :class="{ playing: row.playing }"
       @dblclick="playRow(index)"
+      @contextmenu="openRowMenu(row.track, $event)"
     >
       <span class="col-index">
         <span v-if="row.playing" class="wp-icon index-playing">&#xE769;</span>
@@ -268,7 +222,7 @@ async function pickPlaylist(option: PlaylistOption) {
           v-if="canAddToPlaylist"
           class="row-action"
           title="添加到歌单"
-          @click="openAddDialog(row.track)"
+          @click="openPlaylistPicker(row.track)"
         >
           <span class="wp-icon">&#xE8FD;</span>
         </button>
@@ -287,27 +241,6 @@ async function pickPlaylist(option: PlaylistOption) {
       <span class="col-duration">{{ formatDuration(row.track.duration) }}</span>
     </div>
   </div>
-
-  <ContentDialog ref="addDialogRef" Title="添加到歌单" CloseButtonText="取消">
-    <div class="picker">
-      <div v-if="pendingTrack" class="picker-track ellipsis">{{ trackTitle(pendingTrack) }}</div>
-      <div v-if="pickerLoading" class="picker-hint">正在加载平台歌单…</div>
-      <div v-else-if="!pickerOptions.length" class="picker-hint">还没有可用的歌单</div>
-      <div v-else class="picker-list">
-        <button
-          v-for="option in pickerOptions"
-          :key="option.key"
-          class="picker-item"
-          :disabled="pickerBusy"
-          @click="pickPlaylist(option)"
-        >
-          <span class="wp-icon picker-icon">&#xE8FD;</span>
-          <span class="picker-name ellipsis">{{ option.name }}</span>
-          <span class="picker-meta ellipsis">{{ option.meta }}</span>
-        </button>
-      </div>
-    </div>
-  </ContentDialog>
 </template>
 
 <style scoped>
@@ -527,76 +460,5 @@ async function pickPlaylist(option: PlaylistOption) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 添加到歌单选择器 */
-.picker {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  min-width: 320px;
-}
-
-.picker-track {
-  font-size: 12px;
-  color: var(--wp-text-tertiary);
-}
-
-.picker-hint {
-  font-size: 13px;
-  color: var(--wp-text-secondary);
-  padding: var(--space-lg) 0;
-}
-
-.picker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.picker-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  height: 36px;
-  padding: 0 var(--space-md);
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  font: inherit;
-  color: var(--wp-text-primary);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-
-.picker-item:hover:not(:disabled) {
-  background: var(--wp-card-hover);
-}
-
-.picker-item:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.picker-icon {
-  font-size: 14px;
-  color: var(--wp-text-secondary);
-  flex: none;
-}
-
-.picker-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-}
-
-.picker-meta {
-  flex: none;
-  max-width: 45%;
-  font-size: 12px;
-  color: var(--wp-text-tertiary);
 }
 </style>

@@ -5,6 +5,8 @@ import TitleBar from "@/components/layout/TitleBar.vue";
 import SideNav from "@/components/layout/SideNav.vue";
 import PlayerBar from "@/components/layout/PlayerBar.vue";
 import ToastHost from "@/components/common/ToastHost.vue";
+import ContextMenuHost from "@/components/common/ContextMenuHost.vue";
+import PlaylistPickerHost from "@/components/common/PlaylistPickerHost.vue";
 import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { useLibraryStore } from "@/stores/library";
@@ -52,6 +54,8 @@ onUnmounted(() => {
     </div>
     <PlayerBar class="app-playerbar" />
     <ToastHost />
+    <ContextMenuHost />
+    <PlaylistPickerHost />
   </div>
 </template>
 

@@ -44,28 +44,31 @@ button {
   font-family: inherit;
 }
 
-/* ------------------------------ 滚动条（WinUI 风格细滚动条） ------------------------------ */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--wp-scrollbar-thumb) transparent;
-}
-
+/* ------------------------------ 滚动条（悬浮时才显示的细滚动条） ------------------------------ */
+/* 注意：不要设置 scrollbar-width/scrollbar-color，否则 Chromium 会忽略下面的 ::-webkit-scrollbar 自定义样式 */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background-color: transparent;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 *:hover::-webkit-scrollbar-thumb {
   background-color: var(--wp-scrollbar-thumb);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* ------------------------------ 通用工具类 ------------------------------ */

@@ -1,8 +1,56 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { usePlayerStore } from "@/stores/player";
+import { useLibraryStore } from "@/stores/library";
+import { usePluginsStore } from "@/stores/plugins";
+import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { openPlaylistPicker } from "@/services/playlistPicker";
 import { formatDuration, trackArtist, trackTitle } from "@/types/player";
+import type { UnifiedTrack } from "@/types/plugin";
 
 const player = usePlayerStore();
+const library = useLibraryStore();
+const plugins = usePluginsStore();
+
+const canAddToPlaylist = computed(
+  () =>
+    library.playlists.length > 0 ||
+    plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
+);
+
+/** 队列行右键菜单：添加到歌单 / 添加到我喜欢 / 移除 / 添加到播放队列 */
+function openItemMenu(track: UnifiedTrack, uid: string, event: MouseEvent) {
+  const liked = library.isLiked(track);
+  const items: ContextMenuItem[] = [];
+  if (canAddToPlaylist.value) {
+    items.push({
+      key: "playlist",
+      label: "添加到歌单",
+      icon: "&#xE8FD;",
+      action: () => openPlaylistPicker(track),
+    });
+  }
+  items.push({
+    key: "like",
+    label: liked ? "取消喜欢" : "添加到我喜欢",
+    icon: liked ? "&#xE735;" : "&#xE734;",
+    action: () => library.toggleLike(track),
+  });
+  items.push({
+    key: "queue",
+    label: "添加到播放队列",
+    icon: "&#xE710;",
+    action: () => player.addToQueue([track]),
+  });
+  items.push({
+    key: "remove",
+    label: "移除",
+    icon: "&#xE74D;",
+    danger: true,
+    action: () => player.removeFromQueue(uid),
+  });
+  openContextMenu(event, items);
+}
 </script>
 
 <template>
@@ -25,6 +73,7 @@ const player = usePlayerStore();
             draggable="true"
             @dragstart.stop
             @dblclick="player.playAt(index)"
+            @contextmenu="openItemMenu(item.track, item.uid, $event)"
           >
             <div class="queue-index">
               <span v-if="index === player.currentIndex" class="wp-icon playing-indicator">&#xE769;</span>
