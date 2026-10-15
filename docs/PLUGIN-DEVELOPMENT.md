@@ -19,7 +19,7 @@ WinPlayer 的音乐完全来自插件。插件负责把任意音乐来源（HTTP
 - 插件代码运行在 **Web Worker 沙箱**中：无 DOM、无 `window`、无法访问主程序状态
 - 插件的**所有网络请求**必须通过 `ctx.request()`，由 Rust 后端代理转发（无 CORS 限制，也无法绕过）
 - 插件只能访问自己的**私有存储** `ctx.storage`
-- 可调用的方法有白名单限制（`search` / `getSongUrl` / `getPlaylist` / `getRecommendations` / `getLyrics` / `getHotKeywords`）
+- 可调用的方法有白名单限制（`search` / `getSongUrl` / `getPlaylist` / `getRecommendations` / `getLyrics` / `getHotKeywords` / `getLoginQr` / `pollLogin` / `getLoginState` / `logout`）
 
 ## 插件包格式
 
@@ -51,7 +51,12 @@ my-plugin/
   "homepage": "https://...",      // 可选
   "main": "main.js",              // 可选，入口文件（默认 main.js，仅限插件目录内相对路径）
   "apiVersion": 1,                // 必填，插件协议版本（当前为 1）
-  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords", "playlist"],
+  "capabilities": ["search", "songUrl", "recommend", "lyrics", "hotKeywords", "playlist", "login"],
+  "login": {                     // 可选，capabilities 含 "login" 时生效
+    "credentialKey": "token",    // 凭证写入的设置项 key，默认 "credential"
+    "pollInterval": 2000,        // 主程序轮询扫码状态的间隔（毫秒），默认 2000，最小 500
+    "expiresIn": 120000          // 二维码有效期（毫秒），默认 120000
+  },
   "settings": [                   // 可选，声明设置项，主程序自动生成配置表单
     { "key": "token",  "label": "API Token", "type": "password", "description": "用于鉴权" },
     { "key": "area",   "label": "音质", "type": "select", "default": "standard",
@@ -109,10 +114,55 @@ export default {
     return ["关键词1", "关键词2"];
   },
 
+  /* ---------- 以下四项均为可选，capabilities 含 "login" 时实现 ---------- */
+
+  /** 生成登录二维码。content 是二维码内容（通常是一段 URL），主程序在本地渲染成图片 */
+  async getLoginQr({ fresh } = {}) {
+    return {
+      content: "https://example.com/login?codekey=xxx",
+      key: "插件侧会话标识",   // 可选，主程序会在轮询时原样回传
+      expiresIn: 120000,      // 可选，缺省取 manifest.login.expiresIn
+      hint: "使用手机 App 扫码", // 可选，展示给用户的操作提示
+    };
+  },
+
+  /** 轮询扫码状态。主程序按 manifest.login.pollInterval 定时调用 */
+  async pollLogin({ key } = {}) {
+    return { status: "waiting" };    // 等待扫码
+    // return { status: "confirming" };  // 已扫码，等待手机确认
+    // return { status: "expired", message: "二维码已过期" };
+    // return { status: "error", message: "具体原因" };
+    // return { status: "success", credential: "不透明凭证串", profile: { nickname: "昵称", avatar: "https://..." } };
+  },
+
+  /** 查询当前登录态，用于在插件卡片上展示「已登录 xx」 */
+  async getLoginState() {
+    return { loggedIn: false };      // 或 { loggedIn: true, profile: { nickname, avatar } }
+  },
+
+  /** 退出登录。凭证由主程序从设置项中清除，插件不必自己持久化 */
+  async logout() {},
+
   /** 卸载/重载前清理（可选） */
   async dispose() {},
 };
 ```
+
+### 扫码登录（能力：login）
+
+登录是一个**宿主与插件协作**的流程，插件只负责与来源站交互，凭证的持久化由主程序统一完成：
+
+1. 插件管理页对声明了 `"login"` 能力的插件展示登录区
+2. 用户点击「扫码登录」→ 主程序调用 `getLoginQr()` 拿到 `content`，用本地 QR 库渲染成图片（插件无 DOM，不可能自己画图）
+3. 主程序按 `manifest.login.pollInterval` 反复调用 `pollLogin({ key })`，直到返回 `success` / `expired` / `error`
+4. 拿到 `success` 后，主程序把 `credential` 写入 `settings[credentialKey]`（该设置项建议声明为 `password` 类型），随后**重建插件 Worker**
+5. 此后插件从 `ctx.settings[credentialKey]` 读回凭证；`logout()` 被调用后主程序会把该设置项清空
+
+要点：
+
+- `credential` 对插件是**不透明字符串**，可以是 Cookie 串、token 或任意格式，主程序不解析它
+- 凭证写入会重建 Worker，因此主程序在收到 `success` 后**不再继续轮询**
+- 凭证回传的格式不要求 JSON，登录态查询（`getLoginState`）才需要结构化的 `profile`
 
 ### 统一数据格式
 
@@ -221,6 +271,9 @@ export default {
 2. 在插件管理页安装 `plugins/demo-source`（或 `plugins/dist/demo-source-1.0.0.json`）
 3. 右键窗口 → 检查（DevTools）查看 `[插件 com.winplayer.demo]` 日志
 4. 修改插件后重新安装（同 ID 覆盖安装）即可生效
+
+> 仓库内 `plugins/netease-source`（网易云音乐音源）是一个调用真实第三方 API 的完整示例，
+> 涵盖分页搜索、直链换取、批量补全曲目与错误码处理，可作为接入真实来源的参考。
 
 ## 常见问题
 

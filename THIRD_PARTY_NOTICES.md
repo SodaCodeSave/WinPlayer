@@ -32,6 +32,14 @@ https://github.com/Furry-Xiyi/WinUIonWeb
 - **协议**：MIT
 - **用途**：前端 UI 框架
 
+## qrcode
+
+- **项目**：[node-qrcode](https://github.com/soldair/node-qrcode)
+- **作者**：Ryan Day 及贡献者
+- **npm 包**：[`qrcode`](https://www.npmjs.com/package/qrcode)
+- **协议**：MIT
+- **用途**：插件管理页的扫码登录区。插件运行在无 DOM 的 Web Worker 沙箱中，只能回传二维码的**内容字符串**（如 `https://music.163.com/login?codekey=...`），图片必须由主程序在本地渲染，本库即承担该职责。
+
 ## 其他依赖
 
 前端与 Rust 依赖的完整列表参见 `package.json` 与 `src-tauri/Cargo.lock`，各依赖协议以其上游仓库声明为准。

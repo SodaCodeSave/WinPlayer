@@ -75,10 +75,21 @@ pub async fn http_fetch(spec: HttpRequestSpec) -> Result<HttpResponseSpec, Strin
     let status = response.status();
     let status_text = status.canonical_reason().unwrap_or("").to_string();
 
-    let mut headers = HashMap::new();
+    // 同名响应头（典型如登录返回的多个 Set-Cookie）按出现顺序用换行拼接，
+    // 否则 HashMap::insert 会只保留最后一个，插件就拿不到完整登录凭证。
+    let mut headers: HashMap<String, String> = HashMap::new();
     for (key, value) in response.headers().iter() {
         if let Ok(text) = value.to_str() {
-            headers.insert(key.as_str().to_string(), text.to_string());
+            let name = key.as_str().to_string();
+            match headers.get_mut(&name) {
+                Some(existing) => {
+                    existing.push('\n');
+                    existing.push_str(text);
+                }
+                None => {
+                    headers.insert(name, text.to_string());
+                }
+            }
         }
     }
 

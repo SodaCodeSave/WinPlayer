@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import QRCode from "qrcode";
 import { usePluginsStore, type PluginRecord } from "@/stores/plugins";
 import { useSettingsStore } from "@/stores/settings";
 import { toast } from "@/services/toast";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { ComboBox, ContentDialog, NumberBox, PasswordBox, TextBox, ToggleSwitch } from "winuionweb";
-import type { MarketEntry, PluginSettingItem } from "@/types/plugin";
+import type {
+  LoginPollResult,
+  LoginProfile,
+  LoginState,
+  MarketEntry,
+  PluginSettingItem,
+} from "@/types/plugin";
 
 const plugins = usePluginsStore();
 const settings = useSettingsStore();
@@ -39,6 +46,7 @@ function capabilityLabel(capability: string): string {
     recommend: "推荐",
     lyrics: "歌词",
     hotKeywords: "热搜词",
+    login: "账号登录",
   };
   return map[capability] ?? capability;
 }
@@ -106,6 +114,201 @@ function onSelectChange(
   if (option) setDraft(record, item, option.value);
 }
 
+/* ------------------------------ 扫码登录（能力：login） ------------------------------ */
+
+/** 正在展示的二维码会话 */
+interface QrSession {
+  image: string;
+  key?: string;
+}
+
+const loginStates = ref<Record<string, LoginState | null>>({});
+const loginQr = ref<Record<string, QrSession | null>>({});
+const loginStatus = ref<Record<string, string>>({});
+const loginErrors = ref<Record<string, string>>({});
+const loginBusy = ref<Record<string, boolean>>({});
+
+/** 每个插件的轮询与过期定时器 */
+const pollTimers = new Map<string, number>();
+const expiryTimers = new Map<string, number>();
+
+function supportsLogin(record: PluginRecord): boolean {
+  // 停用的插件拿不到运行时，登录区整块隐藏
+  return record.enabled && plugins.hasCapability(record, "login");
+}
+
+function isLoggedIn(id: string): boolean {
+  return loginStates.value[id]?.loggedIn === true;
+}
+
+function loginName(id: string): string {
+  const nickname = loginStates.value[id]?.profile?.nickname;
+  return nickname ? `已登录 · ${nickname}` : "已登录";
+}
+
+function loginAvatar(id: string): string {
+  return loginStates.value[id]?.profile?.avatar ?? "";
+}
+
+function qrImage(id: string): string {
+  return loginQr.value[id]?.image ?? "";
+}
+
+function qrActive(id: string): boolean {
+  return Boolean(loginQr.value[id]);
+}
+
+function statusText(id: string): string {
+  return loginStatus.value[id] ?? "";
+}
+
+function errorText(id: string): string {
+  return loginErrors.value[id] ?? "";
+}
+
+function loginBusyNow(id: string): boolean {
+  return Boolean(loginBusy.value[id]);
+}
+
+function stopPolling(id: string): void {
+  const timer = pollTimers.get(id);
+  if (timer) window.clearTimeout(timer);
+  pollTimers.delete(id);
+}
+
+function clearQr(id: string, status = ""): void {
+  stopPolling(id);
+  const expiry = expiryTimers.get(id);
+  if (expiry) window.clearTimeout(expiry);
+  expiryTimers.delete(id);
+  loginQr.value[id] = null;
+  loginStatus.value[id] = status;
+}
+
+/** 查询登录态（凭证在扫码成功后由 store 写回设置，会重建 Worker，因此这里每次重新拉取） */
+async function refreshLoginState(record: PluginRecord, fallback?: LoginProfile): Promise<void> {
+  const id = record.entry.id;
+  try {
+    const state = await plugins.getLoginState(id);
+    loginStates.value[id] = state ?? (fallback ? { loggedIn: true, profile: fallback } : null);
+  } catch {
+    loginStates.value[id] = fallback ? { loggedIn: true, profile: fallback } : null;
+  }
+}
+
+async function startQrLogin(record: PluginRecord): Promise<void> {
+  const id = record.entry.id;
+  if (loginBusyNow(id)) return;
+  clearQr(id);
+  delete loginErrors.value[id];
+  loginBusy.value[id] = true;
+  loginStatus.value[id] = "正在获取二维码…";
+
+  try {
+    const qr = await plugins.getLoginQr(id);
+    if (!qr?.content) throw new Error("插件未返回登录二维码");
+
+    const image = await QRCode.toDataURL(qr.content, {
+      margin: 1,
+      width: 220,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+
+    loginQr.value[id] = { image, key: qr.key };
+    loginStatus.value[id] = qr.hint ?? "等待扫码";
+    startPolling(record, qr.key, qr.expiresIn ?? record.entry.manifest.login?.expiresIn ?? 120000);
+  } catch (error) {
+    loginQr.value[id] = null;
+    loginStatus.value[id] = "";
+    loginErrors.value[id] = error instanceof Error ? error.message : String(error);
+  } finally {
+    loginBusy.value[id] = false;
+  }
+}
+
+function startPolling(record: PluginRecord, key: string | undefined, expiresIn: number): void {
+  const id = record.entry.id;
+  stopPolling(id);
+  const interval = Math.max(500, record.entry.manifest.login?.pollInterval ?? 2000);
+
+  const schedule = (): void => {
+    if (!qrActive(id)) return;
+    pollTimers.set(id, window.setTimeout(() => void tick(), interval));
+  };
+
+  const tick = async (): Promise<void> => {
+    pollTimers.delete(id);
+    if (!qrActive(id)) return;
+
+    let result: LoginPollResult | null = null;
+    try {
+      result = await plugins.pollLogin(id, key);
+    } catch (error) {
+      // 单次轮询失败（网络抖动）不直接判死，下一轮会继续；Worker 被重建时会自然停止
+      loginErrors.value[id] = error instanceof Error ? error.message : String(error);
+    }
+
+    if (!result) {
+      schedule();
+      return;
+    }
+
+    switch (result.status) {
+      case "waiting":
+        loginStatus.value[id] = "等待扫码";
+        delete loginErrors.value[id];
+        break;
+      case "confirming":
+        loginStatus.value[id] = "已扫码，请在手机上确认";
+        delete loginErrors.value[id];
+        break;
+      case "expired":
+        clearQr(id, "二维码已过期，请重新获取");
+        return;
+      case "success": {
+        clearQr(id);
+        toast(`「${record.entry.manifest.name}」登录成功`, "success");
+        await refreshLoginState(record, result.profile);
+        return;
+      }
+      default:
+        clearQr(id, result.message ?? "登录失败");
+        return;
+    }
+    schedule();
+  };
+
+  schedule();
+  // 服务端返回 800 之前就到期时的兜底
+  expiryTimers.set(
+    id,
+    window.setTimeout(() => clearQr(id, "二维码已过期，请重新获取"), expiresIn),
+  );
+}
+
+function cancelQr(record: PluginRecord): void {
+  clearQr(record.entry.id);
+}
+
+async function confirmLogout(record: PluginRecord): Promise<void> {
+  const id = record.entry.id;
+  clearQr(id);
+  try {
+    await plugins.logout(id);
+    loginStates.value[id] = { loggedIn: false };
+    loginStatus.value[id] = "已退出登录";
+    toast(`「${record.entry.manifest.name}」已退出登录`, "success");
+  } catch (error) {
+    loginErrors.value[id] = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function refreshAllLoginStates(): Promise<void> {
+  await Promise.allSettled(
+    plugins.records.filter(supportsLogin).map((record) => refreshLoginState(record)),
+  );
+}
+
 async function installFromFile() {
   await plugins.installFromDialog();
 }
@@ -155,14 +358,30 @@ async function installFromMarket(entry: MarketEntry) {
   await plugins.installFromUrl(entry.url);
 }
 
+// 插件列表可能异步加载/安装，按“具备登录能力的插件 id 集合”变化时补查一次登录态
+watch(
+  () =>
+    plugins.records
+      .filter(supportsLogin)
+      .map((record) => record.entry.id)
+      .join(","),
+  () => void refreshAllLoginStates(),
+  { immediate: true },
+);
+
 onMounted(async () => {
   if (!plugins.records.length && !plugins.loading) await plugins.loadInstalled();
   await loadMarket();
+  await refreshAllLoginStates();
 });
 
 onUnmounted(() => {
   for (const timer of draftTimers.values()) window.clearTimeout(timer);
   draftTimers.clear();
+  for (const timer of pollTimers.values()) window.clearTimeout(timer);
+  pollTimers.clear();
+  for (const timer of expiryTimers.values()) window.clearTimeout(timer);
+  expiryTimers.clear();
 });
 </script>
 
@@ -232,6 +451,59 @@ onUnmounted(() => {
             <button class="wp-standard-button small danger" @click="confirmUninstall(record)">
               卸载
             </button>
+          </div>
+
+          <!-- 扫码登录（能力：login） -->
+          <div v-if="supportsLogin(record)" class="plugin-login">
+            <template v-if="isLoggedIn(record.entry.id)">
+              <div class="login-user">
+                <img
+                  v-if="loginAvatar(record.entry.id)"
+                  class="login-avatar"
+                  :src="loginAvatar(record.entry.id)"
+                  alt=""
+                />
+                <span v-else class="wp-icon login-icon">&#xE77B;</span>
+                <span class="login-name">{{ loginName(record.entry.id) }}</span>
+                <span v-if="statusText(record.entry.id)" class="login-sub">
+                  {{ statusText(record.entry.id) }}
+                </span>
+              </div>
+              <button class="wp-standard-button small" @click="confirmLogout(record)">退出登录</button>
+            </template>
+
+            <template v-else-if="qrActive(record.entry.id)">
+              <div class="qr-box">
+                <img class="qr-image" :src="qrImage(record.entry.id)" alt="登录二维码" />
+              </div>
+              <div class="qr-side">
+                <div class="login-name">{{ statusText(record.entry.id) || "等待扫码" }}</div>
+                <div v-if="errorText(record.entry.id)" class="login-error">
+                  {{ errorText(record.entry.id) }}
+                </div>
+                <button class="wp-standard-button small" @click="cancelQr(record)">取消</button>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="login-idle">
+                <div class="login-name">未登录</div>
+                <div class="login-desc">扫码登录后可播放 VIP / 受限歌曲</div>
+                <div v-if="statusText(record.entry.id)" class="login-sub">
+                  {{ statusText(record.entry.id) }}
+                </div>
+                <div v-if="errorText(record.entry.id)" class="login-error">
+                  {{ errorText(record.entry.id) }}
+                </div>
+              </div>
+              <button
+                class="wp-accent-button small"
+                :disabled="loginBusyNow(record.entry.id)"
+                @click="startQrLogin(record)"
+              >
+                {{ loginBusyNow(record.entry.id) ? "获取中…" : "扫码登录" }}
+              </button>
+            </template>
           </div>
 
           <!-- 插件设置表单 -->
@@ -513,6 +785,88 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--space-md);
+}
+
+/* 扫码登录区：与设置表单一样占满整行 */
+.plugin-login {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--wp-divider);
+  padding-top: var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  min-height: 56px;
+}
+
+.login-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: 0;
+  flex: 1;
+}
+
+.login-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+
+.login-icon {
+  font-size: 22px;
+  color: var(--wp-text-secondary);
+  flex: none;
+}
+
+.login-idle {
+  flex: 1;
+  min-width: 0;
+}
+
+.qr-box {
+  flex: none;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid var(--wp-control-stroke-secondary);
+  border-radius: var(--radius-sm);
+  line-height: 0;
+}
+
+.qr-image {
+  width: 132px;
+  height: 132px;
+  image-rendering: pixelated;
+}
+
+.qr-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.login-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-desc {
+  font-size: 12px;
+  color: var(--wp-text-secondary);
+  margin-top: 2px;
+}
+
+.login-sub {
+  font-size: 12px;
+  color: var(--wp-text-tertiary);
+}
+
+.login-error {
+  font-size: 12px;
+  color: var(--wp-danger);
+  margin-top: 2px;
 }
 
 .plugin-settings {

@@ -16,7 +16,24 @@ export type PluginCapability =
   | "playlist"
   | "recommend"
   | "lyrics"
-  | "hotKeywords";
+  | "hotKeywords"
+  | "login";
+
+/**
+ * 登录能力声明（manifest.login，能力为 login 时使用）
+ *
+ * 登录凭证是不透明字符串：插件扫码成功后回传 credential，宿主负责把它持久化到
+ * `settings[credentialKey]` 指向的设置项（该设置项应声明为 password 类型），
+ * 之后插件从 ctx.settings 里读回来即可。
+ */
+export interface PluginLoginConfig {
+  /** 凭证写入的设置项 key，默认 "credential" */
+  credentialKey?: string;
+  /** 宿主轮询扫码状态的间隔（毫秒），默认 2000，最小 500 */
+  pollInterval?: number;
+  /** 二维码有效期（毫秒），默认 120000，超时后宿主停止轮询并标记过期 */
+  expiresIn?: number;
+}
 
 /** 插件设置项（由插件 manifest 声明，插件管理页据此渲染表单） */
 export interface PluginSettingItem {
@@ -48,6 +65,8 @@ export interface PluginManifest {
   capabilities: PluginCapability[];
   /** 设置项定义 */
   settings?: PluginSettingItem[];
+  /** 登录能力的额外声明（capabilities 含 login 时有效） */
+  login?: PluginLoginConfig;
 }
 
 /** 单文件 JSON 插件：清单字段 + code */
@@ -125,6 +144,60 @@ export interface RecommendResult {
   playlists?: UnifiedPlaylist[];
 }
 
+/* ------------------------------ 登录（能力：login） ------------------------------ */
+
+/** 插件回传给宿主的登录二维码 */
+export interface LoginQr {
+  /** 二维码内容（通常是一个 URL），由宿主在本地渲染为图片 */
+  content: string;
+  /**
+   * 插件侧的会话标识，宿主会在轮询时原样回传。
+   * 插件可以不使用它（自己在内部记住当前二维码也可以），但回传能让轮询在 Worker 重建后依然可用
+   */
+  key?: string;
+  /** 有效期（毫秒），缺省取 manifest.login.expiresIn（再缺省 120000） */
+  expiresIn?: number;
+  /** 展示给用户的操作提示，如「使用网易云音乐 App 扫码」 */
+  hint?: string;
+}
+
+/** 扫码轮询状态 */
+export type LoginQrStatus =
+  /** 等待扫码 */
+  | "waiting"
+  /** 已扫码，等待手机端确认 */
+  | "confirming"
+  /** 授权成功 */
+  | "success"
+  /** 二维码已过期，需重新生成 */
+  | "expired"
+  /** 出错，message 说明原因 */
+  | "error";
+
+/** 登录用户信息（用于在插件卡片上展示「已登录 xx」） */
+export interface LoginProfile {
+  id?: string;
+  nickname?: string;
+  avatar?: string;
+}
+
+/** 轮询扫码状态的结果 */
+export interface LoginPollResult {
+  status: LoginQrStatus;
+  /** status 为 success 时的登录凭证（不透明字符串），宿主会写入 credentialKey 指向的设置项 */
+  credential?: string;
+  /** status 为 success 时可顺带回传用户信息，省去宿主再查一次 */
+  profile?: LoginProfile;
+  /** status 为 error / expired 时的原因 */
+  message?: string;
+}
+
+/** 当前登录态 */
+export interface LoginState {
+  loggedIn: boolean;
+  profile?: LoginProfile;
+}
+
 /* ------------------------------ 运行时接口 ------------------------------ */
 
 /** 经主程序代理的网络请求 */
@@ -196,6 +269,18 @@ export interface PluginModule {
 
   /** 热搜词（能力：hotKeywords） */
   getHotKeywords?(): Promise<string[]>;
+
+  /** 生成登录二维码（能力：login） */
+  getLoginQr?(params?: { fresh?: boolean }): Promise<LoginQr | null>;
+
+  /** 轮询扫码状态（能力：login），宿主按 manifest.login.pollInterval 定时调用 */
+  pollLogin?(params: { key?: string }): Promise<LoginPollResult | null>;
+
+  /** 查询当前登录态（能力：login） */
+  getLoginState?(params?: {}): Promise<LoginState | null>;
+
+  /** 退出登录（能力：login）。凭证由宿主从设置项中清除，插件无需关心持久化 */
+  logout?(params?: {}): Promise<void | null>;
 
   /** 插件卸载/重载前清理（可选） */
   dispose?(): Promise<void> | void;

@@ -38,3 +38,8 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# --- 版权风险：网易云音源插件不入库 ---
+plugins/netease-source/
+plugins/netease-source.zip
+plugins/*.zip

@@ -125,6 +125,11 @@ const INVOKEABLE_METHODS = new Set([
   "getRecommendations",
   "getLyrics",
   "getHotKeywords",
+  // 登录（能力：login）
+  "getLoginQr",
+  "pollLogin",
+  "getLoginState",
+  "logout",
 ]);
 
 async function handleMessage(message: HostMessage): Promise<void> {

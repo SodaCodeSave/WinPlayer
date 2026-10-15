@@ -9,6 +9,9 @@ import { getDb } from "@/services/db";
 import { httpFetchJson } from "@/services/proxy";
 import { toast } from "@/services/toast";
 import type {
+  LoginPollResult,
+  LoginQr,
+  LoginState,
   LyricsResult,
   MarketEntry,
   MarketIndex,
@@ -45,6 +48,16 @@ export function defaultSettingsFromManifest(manifest: PluginManifest): Record<st
     values[item.key] = item.default ?? (item.type === "switch" ? false : "");
   }
   return values;
+}
+
+/**
+ * 登录凭证存放的设置项 key。
+ *
+ * 登录凭证属于「插件私有配置」，由宿主统一持久化到该 key，而不是让每个插件
+ * 自己想办法落盘——这样设置表单天然能展示/清除凭证，退出登录也只是清空它。
+ */
+export function credentialKeyOf(manifest: PluginManifest): string {
+  return manifest.login?.credentialKey || "credential";
 }
 
 export const usePluginsStore = defineStore("plugins", () => {
@@ -292,6 +305,70 @@ export const usePluginsStore = defineStore("plugins", () => {
     return [...words];
   }
 
+  /* ------------------------------ 登录（能力：login） ------------------------------ */
+
+  /** 生成登录二维码；插件未实现登录能力时返回 null */
+  async function getLoginQr(sourceId: string): Promise<LoginQr | null> {
+    const record = getRecordOrThrow(sourceId);
+    if (!hasCapability(record, "login")) return null;
+    const host = await getHost(sourceId);
+    return await host.invoke<LoginQr>("getLoginQr", { fresh: true });
+  }
+
+  /**
+   * 轮询扫码状态。
+   *
+   * 返回 success 时会把凭证写回插件配置的 credentialKey 设置项——该写入会重建
+   * Worker，因此调用方在拿到 success 后必须停止轮询，否则下一次 invoke 会抛
+   * “插件已卸载”。
+   */
+  async function pollLogin(sourceId: string, key?: string): Promise<LoginPollResult | null> {
+    const record = getRecordOrThrow(sourceId);
+    if (!hasCapability(record, "login")) return null;
+    const host = await getHost(sourceId);
+    const result = await host.invoke<LoginPollResult>("pollLogin", key ? { key } : {});
+
+    if (result?.status !== "success") return result;
+    if (!result.credential) {
+      // 成功但没拿到凭证，宁可报错也不能让 UI 显示“已登录”却查不到任何数据
+      return { status: "error", message: "插件未返回登录凭证" };
+    }
+    const credentialKey = credentialKeyOf(record.entry.manifest);
+    await updateSettings(sourceId, { ...record.settings, [credentialKey]: result.credential });
+    return result;
+  }
+
+  /** 查询当前登录态（插件未实现时返回 null） */
+  async function getLoginState(sourceId: string): Promise<LoginState | null> {
+    try {
+      const host = await getHost(sourceId);
+      return await host.invoke<LoginState>("getLoginState", {});
+    } catch {
+      return null;
+    }
+  }
+
+  /** 退出登录：清空凭证设置项（同样会重建 Worker） */
+  async function logout(sourceId: string): Promise<void> {
+    const record = getRecordOrThrow(sourceId);
+    if (!hasCapability(record, "login")) return;
+    try {
+      const host = await getHost(sourceId);
+      await host.invoke("logout", {});
+    } catch {
+      /* 插件侧清理失败不影响凭证清除 */
+    }
+    const credentialKey = credentialKeyOf(record.entry.manifest);
+    await updateSettings(sourceId, { ...record.settings, [credentialKey]: "" });
+  }
+
+  /** 按 id 找到插件记录，找不到时抛出可读错误 */
+  function getRecordOrThrow(sourceId: string): PluginRecord {
+    const record = records.value.find((r) => r.entry.id === sourceId);
+    if (!record) throw new Error(`插件 ${sourceId} 未安装`);
+    return record;
+  }
+
   /* ------------------------------ 插件市场 ------------------------------ */
 
   /** 拉取所有市场源的索引，合并为可安装条目列表 */
@@ -328,6 +405,10 @@ export const usePluginsStore = defineStore("plugins", () => {
     getLyrics,
     getPlaylistDetail,
     getHotKeywords,
+    getLoginQr,
+    pollLogin,
+    getLoginState,
+    logout,
     fetchMarketEntries,
   };
 });
