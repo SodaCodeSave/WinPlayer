@@ -12,6 +12,7 @@ import type {
   AlbumDetail,
   ArtistAlbumsResult,
   ArtistDetail,
+  AvatarResult,
   LoginPollResult,
   LoginQr,
   LoginState,
@@ -42,6 +43,13 @@ export interface AggregatedSourceResult<T> {
   record: PluginRecord;
   result: T | null;
   error?: string;
+}
+
+/** 插件提供的头像（能力：avatar，含来源，供界面展示提示） */
+export interface AppAvatar {
+  image: string;
+  label?: string;
+  sourceId: string;
 }
 
 /** 从 manifest 设置定义生成默认值 */
@@ -425,6 +433,31 @@ export const usePluginsStore = defineStore("plugins", () => {
     await updateSettings(sourceId, { ...record.settings, [credentialKey]: "" });
   }
 
+  /* ------------------------------ 头像（能力：avatar） ------------------------------ */
+
+  /**
+   * 获取窗口右上角展示的头像。
+   *
+   * 按启用插件的声明顺序依次尝试，取第一个返回结果（AvatarResult）的插件；
+   * 未登录/无头像返回 null 的插件视为未提供，继续找下一个。全部失败时返回 null，
+   * 调用方回退到默认头像。
+   */
+  async function getAvatar(): Promise<AppAvatar | null> {
+    const targets = enabledRecords.value.filter((r) => hasCapability(r, "avatar"));
+    for (const record of targets) {
+      try {
+        const host = await getHost(record.entry.id);
+        const result = await host.invoke<AvatarResult>("getAvatar", {});
+        if (result?.image) {
+          return { image: result.image, label: result.label, sourceId: record.entry.id };
+        }
+      } catch {
+        /* 该插件取头像失败，尝试下一个 */
+      }
+    }
+    return null;
+  }
+
   /** 按 id 找到插件记录，找不到时抛出可读错误 */
   function getRecordOrThrow(sourceId: string): PluginRecord {
     const record = records.value.find((r) => r.entry.id === sourceId);
@@ -476,6 +509,7 @@ export const usePluginsStore = defineStore("plugins", () => {
     pollLogin,
     getLoginState,
     logout,
+    getAvatar,
     fetchMarketEntries,
   };
 });

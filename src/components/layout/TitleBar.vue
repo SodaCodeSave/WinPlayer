@@ -1,15 +1,43 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { PersonPicture } from "winuionweb";
+import { pluginDisplayName, usePluginsStore, type AppAvatar } from "@/stores/plugins";
 
 const router = useRouter();
 const appWindow = getCurrentWindow();
+const plugins = usePluginsStore();
 
 const query = ref("");
 const maximized = ref(false);
+
+/** 插件提供的头像（能力：avatar），为空时回退默认占位头像 */
+const avatar = ref<AppAvatar | null>(null);
+
+const avatarUrl = computed(() => avatar.value?.image ?? "");
+const avatarTitle = computed(() => {
+  if (!avatar.value) return "账户";
+  const name = pluginDisplayName(plugins.records, avatar.value.sourceId);
+  const label = avatar.value.label?.trim();
+  return [label, name].filter(Boolean).join(" · ") || "账户";
+});
+
+async function loadAvatar() {
+  try {
+    avatar.value = await plugins.getAvatar();
+  } catch {
+    avatar.value = null;
+  }
+}
+
+/** 插件安装/启停/配置变化后重新取头像（配置变更会重建沙箱） */
+watch(
+  () => plugins.records,
+  () => void loadAvatar(),
+  { deep: true },
+);
 
 let unlistenResize: UnlistenFn | null = null;
 
@@ -18,6 +46,7 @@ async function toggleMaximize() {
 }
 
 onMounted(async () => {
+  void loadAvatar();
   unlistenResize = await appWindow.onResized(() => {
     void appWindow.isMaximized().then((value) => {
       maximized.value = value;
@@ -71,8 +100,9 @@ function submitSearch() {
 
     <div class="titlebar-right">
       <div class="avatar-wrap">
-        <button class="avatar-button" title="账户">
-          <PersonPicture DisplayName="音" :Width="28" :Height="28" FontSize="12" />
+        <button class="avatar-button" :title="avatarTitle">
+          <img v-if="avatarUrl" class="avatar-image" :src="avatarUrl" alt="" draggable="false" />
+          <PersonPicture v-else DisplayName="音" :Width="28" :Height="28" FontSize="12" />
         </button>
       </div>
 
@@ -210,6 +240,15 @@ function submitSearch() {
   padding: 0;
   cursor: pointer;
   border-radius: 50%;
+}
+
+.avatar-image {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--wp-control-fill);
 }
 
 .caption-buttons {

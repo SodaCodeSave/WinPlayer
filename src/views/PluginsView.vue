@@ -49,6 +49,7 @@ function capabilityLabel(capability: string): string {
     lyrics: "歌词",
     hotKeywords: "热搜词",
     login: "账号登录",
+    avatar: "头像",
   };
   return map[capability] ?? capability;
 }

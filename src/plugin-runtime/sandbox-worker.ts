@@ -134,6 +134,8 @@ const INVOKEABLE_METHODS = new Set([
   "pollLogin",
   "getLoginState",
   "logout",
+  // 头像（能力：avatar）
+  "getAvatar",
 ]);
 
 async function handleMessage(message: HostMessage): Promise<void> {

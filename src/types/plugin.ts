@@ -19,7 +19,8 @@ export type PluginCapability =
   | "recommend"
   | "lyrics"
   | "hotKeywords"
-  | "login";
+  | "login"
+  | "avatar";
 
 /**
  * 登录能力声明（manifest.login，能力为 login 时使用）
@@ -206,6 +207,17 @@ export interface RecommendResult {
   playlists?: UnifiedPlaylist[];
 }
 
+/** 头像（能力：avatar）。宿主在窗口右上角预留的头像处展示 */
+export interface AvatarResult {
+  /**
+   * 头像图片地址：http(s) URL 或 data: URI（base64）。
+   * 宿主直接用作 <img src>；若来源有防盗链，插件应改为回传 data URI
+   */
+  image: string;
+  /** 展示名称（如用户昵称），用作悬停提示 */
+  label?: string;
+}
+
 /* ------------------------------ 登录（能力：login） ------------------------------ */
 
 /** 插件回传给宿主的登录二维码 */
@@ -352,6 +364,9 @@ export interface PluginModule {
 
   /** 退出登录（能力：login）。凭证由宿主从设置项中清除，插件无需关心持久化 */
   logout?(params?: {}): Promise<void | null>;
+
+  /** 提供头像（能力：avatar）。宿主在窗口右上角预留的头像处展示，未登录/无头像时返回 null */
+  getAvatar?(params?: {}): Promise<AvatarResult | null>;
 
   /** 插件卸载/重载前清理（可选） */
   dispose?(): Promise<void> | void;
