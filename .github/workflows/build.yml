@@ -144,6 +144,7 @@ jobs:
         run: |
           if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
             echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 -d > debug.keystore
+            echo "KEYSTORE_FROM_SECRET=true" >> "$GITHUB_ENV"
           else
             keytool -genkeypair -v \
               -keystore debug.keystore \
@@ -159,7 +160,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Upload keystore artifact
-        if: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 == '' }}
+        if: env.KEYSTORE_FROM_SECRET != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-keystore
