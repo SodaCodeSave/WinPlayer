@@ -342,6 +342,18 @@ async function toggleLikeCurrent() {
   width: 100%;
 }
 
+/* 拖拽/点击滑块时抑制全局焦点黑框：
+   beginPointer 调 focus() 且 preventDefault 阻止默认焦点流程，:focus-visible
+   标志会延续此前键盘交互的状态，global.css 的 :focus-visible 焦点框（winuionweb
+   的 .win-slider{outline:none} 因导入顺序在前而失效）据此画出 2px 方形黑框。
+   WinUI 焦点视觉仅用于键盘导航，由库的 .is-keyboard-focused 提供（保留不动）。 */
+.seek-slider :deep(.win-slider:not(.is-keyboard-focused):focus-visible),
+.volume-slider :deep(.win-slider:not(.is-keyboard-focused):focus-visible),
+.seek-slider :deep(.win-slider.is-pressed),
+.volume-slider :deep(.win-slider.is-pressed) {
+  outline: none;
+}
+
 /* ---------------- 右：音量/队列 ---------------- */
 .extras {
   display: flex;
