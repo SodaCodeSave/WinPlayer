@@ -6034,6 +6034,8 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-sql",
  "tokio",
+ "windows",
+ "windows-collections",
  "zip",
 ]
 

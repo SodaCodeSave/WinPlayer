@@ -1,4 +1,5 @@
 mod commands;
+mod smtc;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -29,7 +30,13 @@ pub fn run() {
             commands::plugins::plugin_remove,
             commands::plugins::plugin_storage_get,
             commands::plugins::plugin_storage_set,
+            commands::smtc::smtc_sync,
         ])
+        .setup(|app| {
+            // 主窗口此时已创建，可在其上挂接系统媒体传输控件（SMTC）
+            smtc::init(app.handle());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -27,6 +27,21 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 rand = "0.9"
 
+# SMTC（系统媒体传输控件）：仅 Windows 平台
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Media",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_System_WinRT",
+] }
+
+# 以下特性只在测试（SMTC 冒烟测试）里用到
+[target.'cfg(windows)'.dev-dependencies]
+windows = { version = "0.62", features = ["Media_Control", "Win32_UI_WindowsAndMessaging"] }
+windows-collections = "0.3"
+
 [profile.release]
 codegen-units = 1
 lto = true

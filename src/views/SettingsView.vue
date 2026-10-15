@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ComboBox, TextBox } from "winuionweb";
+import { ComboBox, TextBox, ToggleSwitch } from "winuionweb";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings";
 import { toast } from "@/services/toast";
 import type { MarketSource } from "@/types/plugin";
@@ -54,6 +54,10 @@ function removeSource(index: number) {
 function openRepo() {
   void openUrl("https://github.com/Furry-Xiyi/WinUIonWeb");
 }
+
+function onSmtcToggle(event: { IsOn: boolean }): void {
+  void settings.setSmtcEnabled(Boolean(event?.IsOn));
+}
 </script>
 
 <template>
@@ -76,6 +80,20 @@ function openRepo() {
           :SelectedIndex="themeIndex"
           @SelectionChanged="onThemeChange"
         />
+      </div>
+    </section>
+
+    <!-- 系统集成 -->
+    <section class="settings-section">
+      <h2 class="settings-section-title">系统集成</h2>
+      <div class="settings-card">
+        <div class="card-content">
+          <div class="card-header">系统媒体传输控件（SMTC）</div>
+          <div class="card-description">
+            在 Windows 媒体浮出窗、锁屏与蓝牙设备上显示正在播放的曲目、封面与进度，并响应系统的播放 / 暂停 / 上一首 / 下一首按钮
+          </div>
+        </div>
+        <ToggleSwitch :IsOn="settings.smtcEnabled" @Toggled="onSmtcToggle" />
       </div>
     </section>
 

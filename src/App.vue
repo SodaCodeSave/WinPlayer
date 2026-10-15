@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, watch } from "vue";
 import { RouterView } from "vue-router";
 import TitleBar from "@/components/layout/TitleBar.vue";
 import SideNav from "@/components/layout/SideNav.vue";
@@ -9,20 +9,31 @@ import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
+import { disposeSmtc, initSmtc, setSmtcEnabled } from "@/services/smtc";
 
 const settings = useSettingsStore();
 const plugins = usePluginsStore();
 const library = useLibraryStore();
 const player = usePlayerStore();
 
+// 注册于 load() 之前：设置读出后立即把开关同步给系统媒体控件（SMTC）
+const stopSmtcWatch = watch(
+  () => settings.smtcEnabled,
+  (value) => setSmtcEnabled(value),
+  { immediate: true },
+);
+
 onMounted(async () => {
   await settings.load();
   await Promise.all([library.loadAll(), player.restore()]);
   await plugins.loadInstalled();
+  initSmtc(player);
 });
 
 onUnmounted(() => {
   plugins.disposeAll();
+  stopSmtcWatch();
+  disposeSmtc();
 });
 </script>
 

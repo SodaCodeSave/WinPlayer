@@ -10,6 +10,8 @@ export type ThemePreference = "system" | "light" | "dark";
 export const useSettingsStore = defineStore("settings", () => {
   const theme = ref<ThemePreference>("system");
   const marketSources = ref<MarketSource[]>([]);
+  /** 是否启用系统媒体传输控件（SMTC，仅 Windows） */
+  const smtcEnabled = ref(true);
   const loaded = ref(false);
 
   /** 系统配色查询：winuionweb 的暗色控件变量只认 html 上的 theme-dark 类，
@@ -36,6 +38,7 @@ export const useSettingsStore = defineStore("settings", () => {
   async function load(): Promise<void> {
     theme.value = await getSetting<ThemePreference>("settings.theme", "system");
     marketSources.value = await getSetting<MarketSource[]>("settings.marketSources", []);
+    smtcEnabled.value = await getSetting("settings.smtcEnabled", true);
     applyTheme();
     loaded.value = true;
   }
@@ -51,5 +54,19 @@ export const useSettingsStore = defineStore("settings", () => {
     await setSetting("settings.marketSources", value);
   }
 
-  return { theme, marketSources, loaded, load, setTheme, setMarketSources };
+  async function setSmtcEnabled(value: boolean): Promise<void> {
+    smtcEnabled.value = value;
+    await setSetting("settings.smtcEnabled", value);
+  }
+
+  return {
+    theme,
+    marketSources,
+    smtcEnabled,
+    loaded,
+    load,
+    setTheme,
+    setMarketSources,
+    setSmtcEnabled,
+  };
 });
