@@ -13,30 +13,35 @@ fn db_migrations() -> Vec<Migration> {
 }
 
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:winplayer.db", db_migrations())
-                .build(),
-        )
-        .invoke_handler(tauri::generate_handler![
-            commands::http::http_fetch,
-            commands::plugins::plugin_list,
-            commands::plugins::plugin_read_code,
-            commands::plugins::plugin_install_from_path,
-            commands::plugins::plugin_install_from_url,
-            commands::plugins::plugin_remove,
-            commands::plugins::plugin_storage_get,
-            commands::plugins::plugin_storage_set,
-            commands::smtc::smtc_sync,
-        ])
-        .setup(|app| {
-            // 主窗口此时已创建，可在其上挂接系统媒体传输控件（SMTC）
-            smtc::init(app.handle());
-            Ok(())
-        })
+    let builder = commands::cache::register(
+        tauri::Builder::default()
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_opener::init())
+            .plugin(
+                tauri_plugin_sql::Builder::default()
+                    .add_migrations("sqlite:winplayer.db", db_migrations())
+                    .build(),
+            )
+            .invoke_handler(tauri::generate_handler![
+                commands::cache::cache_stats,
+                commands::cache::cache_clear,
+                commands::http::http_fetch,
+                commands::plugins::plugin_list,
+                commands::plugins::plugin_read_code,
+                commands::plugins::plugin_install_from_path,
+                commands::plugins::plugin_install_from_url,
+                commands::plugins::plugin_remove,
+                commands::plugins::plugin_storage_get,
+                commands::plugins::plugin_storage_set,
+                commands::smtc::smtc_sync,
+            ])
+            .setup(|app| {
+                // 主窗口此时已创建，可在其上挂接系统媒体传输控件（SMTC）
+                smtc::init(app.handle());
+                Ok(())
+            }),
+    );
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

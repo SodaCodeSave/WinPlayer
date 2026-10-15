@@ -13,6 +13,7 @@ import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import { toast } from "@/services/toast";
+import { getCachedData, setCachedData } from "@/services/cache";
 import SongTable from "@/components/common/SongTable.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import type { PlaylistDetail, UnifiedTrack } from "@/types/plugin";
@@ -75,18 +76,31 @@ const header = computed(() => {
   };
 });
 
+/** 缓存展示中（后台刷新在线数据），出错时不打扰已显示的缓存内容 */
+const fromCache = ref(false);
+
 async function loadRemote(source: string, id: string) {
-  loading.value = true;
+  // 先渲染缓存内容，再后台拉取在线数据更新
+  const cached = await getCachedData<PlaylistDetail>(`playlist.${source}.${id}`);
+  if (cached?.data) {
+    remote.value = cached.data;
+    tracks.value = cached.data.tracks ?? [];
+    fromCache.value = true;
+  }
+
+  if (!cached) loading.value = true;
   try {
     const detail = await plugins.getPlaylistDetail(source, id);
     if (!detail) {
-      loadError.value = "插件没有返回这个歌单的内容";
+      if (!cached) loadError.value = "插件没有返回这个歌单的内容";
       return;
     }
     remote.value = detail;
     tracks.value = detail.tracks ?? [];
+    fromCache.value = false;
+    void setCachedData(`playlist.${source}.${id}`, detail);
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : String(error);
+    if (!cached) loadError.value = error instanceof Error ? error.message : String(error);
   } finally {
     loading.value = false;
   }
@@ -105,6 +119,7 @@ async function loadRoute() {
   loadError.value = "";
   remote.value = null;
   tracks.value = [];
+  fromCache.value = false;
 
   if (isRemote.value) {
     const source = String(route.params.source ?? "");
@@ -194,7 +209,9 @@ async function openDelete() {
                 <span class="wp-icon">&#xE74D;</span>删除歌单
               </button>
             </template>
-            <span v-else class="source-badge">来自 {{ sourceName }}</span>
+            <span v-else class="source-badge">
+              来自 {{ sourceName }}<template v-if="fromCache"> · 缓存内容，正在更新…</template>
+            </span>
           </div>
         </div>
         <div class="header-actions">

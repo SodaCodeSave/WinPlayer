@@ -5,6 +5,7 @@ import { usePluginsStore, type AggregatedSourceResult, type PluginRecord } from 
 import { usePlayerStore } from "@/stores/player";
 import { trackArtist, trackTitle } from "@/types/player";
 import type { RecommendResult } from "@/types/plugin";
+import { getCachedData, setCachedData } from "@/services/cache";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { ProgressRing } from "winuionweb";
@@ -14,31 +15,59 @@ const plugins = usePluginsStore();
 const player = usePlayerStore();
 
 const loading = ref(false);
-const sections = ref<Array<{ record: PluginRecord; result: RecommendResult }>>([]);
+/** 展示模型：缓存与在线共用的精简结构（不含易过时的插件运行时对象） */
+interface SectionView {
+  sourceId: string;
+  name: string;
+  result: RecommendResult;
+}
+const sections = ref<SectionView[]>([]);
 const errors = ref<Array<{ record: PluginRecord; error: string }>>([]);
+/** 初始内容来自缓存（后台刷新在线数据） */
+const fromCache = ref(false);
 
-async function load() {
+const CACHE_KEY = "recommend";
+
+/** 在线拉取推荐：仅当有成功结果时替换内容并写缓存，全部失败时保留已有（缓存）内容 */
+async function load(): Promise<void> {
   loading.value = true;
   errors.value = [];
   try {
     const results = await plugins.recommendAll();
-    sections.value = results
+    const ok: SectionView[] = results
       .filter((r): r is AggregatedSourceResult<RecommendResult> & { result: RecommendResult } => !!r.result)
-      .map((r) => ({ record: r.record, result: r.result }));
+      .map((r) => ({ sourceId: r.record.entry.id, name: r.record.entry.manifest.name, result: r.result }));
     errors.value = results
       .filter((r) => r.error)
       .map((r) => ({ record: r.record, error: r.error as string }));
+    if (ok.length) {
+      sections.value = ok;
+      fromCache.value = false;
+      void setCachedData(CACHE_KEY, ok);
+    }
   } finally {
     loading.value = false;
   }
 }
 
-function playFromSource(section: (typeof sections.value)[number], index: number) {
+/** 挂载时先渲染缓存内容，再后台刷新在线数据 */
+async function loadWithCache(): Promise<void> {
+  const cached = await getCachedData<SectionView[]>(CACHE_KEY);
+  if (cached?.data?.length) {
+    sections.value = cached.data;
+    fromCache.value = true;
+  } else {
+    loading.value = true;
+  }
+  await load();
+}
+
+function playFromSource(section: SectionView, index: number) {
   const songs = section.result.songs ?? [];
   if (songs.length) void player.playTracks(songs, index);
 }
 
-onMounted(load);
+onMounted(loadWithCache);
 </script>
 
 <template>
@@ -66,6 +95,8 @@ onMounted(load);
     </div>
 
     <template v-else>
+      <p v-if="fromCache" class="cache-hint">以下为缓存内容，正在更新为最新…</p>
+
       <div v-if="errors.length" class="error-list">
         <p v-for="item in errors" :key="item.record.entry.id" class="error-item">
           「{{ item.record.entry.manifest.name }}」加载失败：{{ item.error }}
@@ -79,9 +110,9 @@ onMounted(load);
         description="已启用的插件没有提供推荐，试试搜索或稍后再来。"
       />
 
-      <section v-for="section in sections" :key="section.record.entry.id" class="source-section">
+      <section v-for="section in sections" :key="section.sourceId" class="source-section">
         <h2 class="wp-section-title">
-          {{ section.record.entry.manifest.name }}
+          {{ section.name }}
           <span class="section-sub">的推荐</span>
         </h2>
 
@@ -97,7 +128,7 @@ onMounted(load);
             @dblclick="playFromSource(section, index)"
           >
             <div class="song-cover">
-              <img v-if="song.cover" :src="song.cover" alt="" class="cover-img" />
+              <img v-if="song.cover" :src="song.cover" alt="" class="cover-img" loading="lazy" decoding="async" />
               <span v-else class="wp-icon cover-placeholder">&#xE8D6;</span>
               <button class="song-play" title="播放" @click="playFromSource(section, index)">
                 <span class="wp-icon">&#xE768;</span>
@@ -145,6 +176,12 @@ onMounted(load);
   font-weight: 400;
   color: var(--wp-text-secondary);
   margin-left: var(--space-md);
+}
+
+.cache-hint {
+  margin: 0 0 var(--space-md) 0;
+  font-size: 12px;
+  color: var(--wp-text-tertiary);
 }
 
 .card-row {

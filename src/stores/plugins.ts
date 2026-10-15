@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PluginHost } from "@/plugin-runtime/host";
 import { getDb } from "@/services/db";
+import { cachedImgUrl } from "@/services/imageCache";
 import { httpFetchJson } from "@/services/proxy";
 import { toast } from "@/services/toast";
 import type {
@@ -317,7 +318,8 @@ export const usePluginsStore = defineStore("plugins", () => {
     const detail = await host.invoke<PlaylistDetail>("getPlaylist", { id: playlistId });
     if (detail) {
       detail.sourceId = sourceId;
-      detail.tracks = (detail.tracks ?? []).map((t) => ({ ...t, sourceId }));
+      detail.cover = cachedImgUrl(detail.cover);
+      detail.tracks = (detail.tracks ?? []).map((t) => withCover({ ...t, sourceId }));
     }
     return detail;
   }
@@ -328,7 +330,8 @@ export const usePluginsStore = defineStore("plugins", () => {
     const detail = await host.invoke<AlbumDetail>("getAlbum", { id: albumId });
     if (detail) {
       detail.sourceId = sourceId;
-      detail.tracks = (detail.tracks ?? []).map((t) => ({ ...t, sourceId }));
+      detail.cover = cachedImgUrl(detail.cover);
+      detail.tracks = (detail.tracks ?? []).map((t) => withCover({ ...t, sourceId }));
     }
     return detail;
   }
@@ -339,7 +342,8 @@ export const usePluginsStore = defineStore("plugins", () => {
     const detail = await host.invoke<ArtistDetail>("getArtist", { id: artistId });
     if (detail) {
       detail.sourceId = sourceId;
-      detail.hotTracks = (detail.hotTracks ?? []).map((t) => ({ ...t, sourceId }));
+      detail.avatar = cachedImgUrl(detail.avatar);
+      detail.hotTracks = (detail.hotTracks ?? []).map((t) => withCover({ ...t, sourceId }));
     }
     return detail;
   }
@@ -353,7 +357,7 @@ export const usePluginsStore = defineStore("plugins", () => {
     const host = await getHost(sourceId);
     const result = await host.invoke<ArtistAlbumsResult>("getArtistAlbums", { id: artistId, page });
     if (result) {
-      result.albums = (result.albums ?? []).map((album) => ({ ...album, sourceId }));
+      result.albums = (result.albums ?? []).map((album) => withCover({ ...album, sourceId }));
     }
     return result;
   }
@@ -449,7 +453,7 @@ export const usePluginsStore = defineStore("plugins", () => {
         const host = await getHost(record.entry.id);
         const result = await host.invoke<AvatarResult>("getAvatar", {});
         if (result?.image) {
-          return { image: result.image, label: result.label, sourceId: record.entry.id };
+          return { image: cachedImgUrl(result.image) ?? result.image, label: result.label, sourceId: record.entry.id };
         }
       } catch {
         /* 该插件取头像失败，尝试下一个 */
@@ -471,7 +475,7 @@ export const usePluginsStore = defineStore("plugins", () => {
         try {
           const host = await getHost(record.entry.id);
           const result = await host.invoke<UnifiedPlaylist[]>("getUserPlaylists", {});
-          const playlists = (result ?? []).map((p) => ({ ...p, sourceId: record.entry.id }));
+          const playlists = (result ?? []).map((p) => withCover({ ...p, sourceId: record.entry.id }));
           return { record, result: playlists };
         } catch (error) {
           return {
@@ -488,7 +492,7 @@ export const usePluginsStore = defineStore("plugins", () => {
   async function getUserPlaylists(sourceId: string): Promise<UnifiedPlaylist[]> {
     const host = await getHost(sourceId);
     const result = await host.invoke<UnifiedPlaylist[]>("getUserPlaylists", {});
-    return (result ?? []).map((p) => ({ ...p, sourceId }));
+    return (result ?? []).map((p) => withCover({ ...p, sourceId }));
   }
 
   /** 把歌曲加入插件平台的歌单 */
@@ -569,10 +573,10 @@ function normalizeSearchResult(result: SearchResult | null, sourceId: string): S
   if (!result) return {};
   return {
     ...result,
-    songs: (result.songs ?? []).map((t) => ({ ...t, sourceId })),
-    playlists: (result.playlists ?? []).map((p) => ({ ...p, sourceId })),
-    albums: (result.albums ?? []).map((a) => ({ ...a, sourceId })),
-    artists: (result.artists ?? []).map((a) => ({ ...a, sourceId })),
+    songs: (result.songs ?? []).map((t) => withCover({ ...t, sourceId })),
+    playlists: (result.playlists ?? []).map((p) => withCover({ ...p, sourceId })),
+    albums: (result.albums ?? []).map((a) => withCover({ ...a, sourceId })),
+    artists: (result.artists ?? []).map((a) => ({ ...a, sourceId, avatar: cachedImgUrl(a.avatar) })),
   };
 }
 
@@ -580,9 +584,14 @@ function normalizeRecommendResult(result: RecommendResult | null, sourceId: stri
   if (!result) return {};
   return {
     ...result,
-    songs: (result.songs ?? []).map((t) => ({ ...t, sourceId })),
-    playlists: (result.playlists ?? []).map((p) => ({ ...p, sourceId })),
+    songs: (result.songs ?? []).map((t) => withCover({ ...t, sourceId })),
+    playlists: (result.playlists ?? []).map((p) => withCover({ ...p, sourceId })),
   };
+}
+
+/** 把 http(s) 封面改写为本地磁盘缓存地址（cachedimg 协议，见 services/imageCache.ts） */
+function withCover<T extends { cover?: string }>(item: T): T {
+  return { ...item, cover: cachedImgUrl(item.cover) };
 }
 
 /** 供外部（如视图）判断插件来源显示名 */

@@ -174,7 +174,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
         <span class="index-hover wp-icon" @click="playRow(index)">&#xE768;</span>
       </span>
       <span class="col-title">
-        <img v-if="row.track.cover" :src="row.track.cover" alt="" class="row-cover" />
+        <img v-if="row.track.cover" :src="row.track.cover" alt="" class="row-cover" loading="lazy" decoding="async" />
         <span class="title-main">
           <span class="title-text ellipsis">{{ trackTitle(row.track) }}</span>
           <span v-if="row.track.alias" class="title-alias ellipsis">（{{ row.track.alias }}）</span>

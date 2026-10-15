@@ -88,7 +88,7 @@ function open() {
 <template>
   <button class="media-card" :title="tooltip" @click="open">
     <div class="card-cover" :class="{ round: kind === 'artist' }">
-      <img v-if="cover" :src="cover" alt="" class="cover-img" />
+      <img v-if="cover" :src="cover" alt="" class="cover-img" loading="lazy" decoding="async" />
       <span v-else class="wp-icon cover-placeholder">{{ placeholderIcon }}</span>
     </div>
     <div class="card-name ellipsis">{{ title }}</div>
