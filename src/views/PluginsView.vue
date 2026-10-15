@@ -50,6 +50,7 @@ function capabilityLabel(capability: string): string {
     hotKeywords: "热搜词",
     login: "账号登录",
     avatar: "头像",
+    myPlaylists: "个人歌单",
   };
   return map[capability] ?? capability;
 }

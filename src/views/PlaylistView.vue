@@ -12,6 +12,7 @@ import { ContentDialog, ProgressRing, TextBox } from "winuionweb";
 import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
+import { toast } from "@/services/toast";
 import SongTable from "@/components/common/SongTable.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import type { PlaylistDetail, UnifiedTrack } from "@/types/plugin";
@@ -28,6 +29,16 @@ const sourceId = computed(() => (typeof route.params.source === "string" ? route
 const sourceName = computed(() =>
   sourceId.value ? pluginDisplayName(plugins.records, sourceId.value) : "",
 );
+
+/**
+ * 平台个人歌单（query.mine=1 标记，来自平台歌单页）：
+ * 来源插件声明 myPlaylists 能力时，允许增删歌曲。
+ */
+const isMine = computed(() => {
+  if (!isRemote.value || route.query.mine !== "1" || !sourceId.value) return false;
+  const record = plugins.records.find((r) => r.entry.id === sourceId.value);
+  return Boolean(record?.enabled && plugins.hasCapability(record, "myPlaylists"));
+});
 
 const playlistId = ref(0);
 const remote = ref<PlaylistDetail | null>(null);
@@ -129,6 +140,18 @@ function shufflePlay() {
 }
 
 async function onRemove(track: UnifiedTrack) {
+  // 平台个人歌单：调用插件把歌曲从平台歌单移除，成功后重新拉取
+  if (isMine.value && sourceId.value) {
+    try {
+      await plugins.removeFromUserPlaylist(sourceId.value, String(route.params.id), track.id);
+      toast(`已从「${header.value?.name ?? "歌单"}」移除`, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+      return;
+    }
+    await loadRemote(sourceId.value, String(route.params.id));
+    return;
+  }
   await library.removeTrackFromPlaylist(playlistId.value, track);
   await loadLocal(playlistId.value);
 }
@@ -202,7 +225,7 @@ async function openDelete() {
         v-else-if="tracks.length"
         :tracks="tracks"
         :show-source="!isRemote"
-        :removable="!isRemote"
+        :removable="!isRemote || isMine"
         @remove="onRemove"
       />
 

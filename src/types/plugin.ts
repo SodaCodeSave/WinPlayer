@@ -20,7 +20,8 @@ export type PluginCapability =
   | "lyrics"
   | "hotKeywords"
   | "login"
-  | "avatar";
+  | "avatar"
+  | "myPlaylists";
 
 /**
  * 登录能力声明（manifest.login，能力为 login 时使用）
@@ -371,6 +372,18 @@ export interface PluginModule {
 
   /** 提供头像（能力：avatar）。宿主在窗口右上角预留的头像处展示，未登录/无头像时返回 null */
   getAvatar?(params?: {}): Promise<AvatarResult | null>;
+
+  /**
+   * 个人歌单（能力：myPlaylists）。返回插件平台当前账号的歌单列表（创建的 + 收藏的），
+   * 未登录时抛出错误或返回空数组。宿主在「平台歌单」页聚合展示
+   */
+  getUserPlaylists?(params?: {}): Promise<UnifiedPlaylist[] | null>;
+
+  /** 增：把歌曲加入平台歌单（能力：myPlaylists）。失败时抛出错误，由宿主 toast 提示 */
+  addToUserPlaylist?(params: { playlistId: string; trackId: string }): Promise<void | null>;
+
+  /** 减：把歌曲从平台歌单移除（能力：myPlaylists）。失败时抛出错误 */
+  removeFromUserPlaylist?(params: { playlistId: string; trackId: string }): Promise<void | null>;
 
   /** 插件卸载/重载前清理（可选） */
   dispose?(): Promise<void> | void;

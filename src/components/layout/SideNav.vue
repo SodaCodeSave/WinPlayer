@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ContentDialog, TextBox } from "winuionweb";
 import { useLibraryStore } from "@/stores/library";
+import { usePluginsStore, type AggregatedSourceResult } from "@/stores/plugins";
+import type { UnifiedPlaylist } from "@/types/plugin";
 
 const router = useRouter();
 const route = useRoute();
 const library = useLibraryStore();
+const plugins = usePluginsStore();
 
 /** ContentDialog 通过 ShowAsync() 打开（库没有 IsOpen prop） */
 interface DialogRef {
@@ -28,6 +31,76 @@ async function openCreateDialog() {
 }
 
 /* 滑动选中药丸（WinUI NavigationView 风格） */
+
+/* ------------------------------ 平台歌单分组 ------------------------------ */
+
+/** 存在启用的个人歌单插件时才展示该分组 */
+const hasMyPlaylistsPlugin = computed(() =>
+  plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
+);
+
+interface PlatformNavItem {
+  key: string;
+  sourceId: string;
+  playlistId: string;
+  name: string;
+  sourceName: string;
+}
+
+const platformGroups = ref<AggregatedSourceResult<UnifiedPlaylist[]>[]>([]);
+const platformLoading = ref(false);
+
+/** 侧边栏直接列出各插件平台的个人歌单 */
+const platformItems = computed<PlatformNavItem[]>(() => {
+  const items: PlatformNavItem[] = [];
+  for (const group of platformGroups.value) {
+    for (const p of group.result ?? []) {
+      items.push({
+        key: `${group.record.entry.id}:${p.id}`,
+        sourceId: group.record.entry.id,
+        playlistId: p.id,
+        name: p.name,
+        sourceName: group.record.entry.manifest.name,
+      });
+    }
+  }
+  return items;
+});
+
+/** 同步失败（多为未登录/登录过期）的插件，供分组内提示 */
+const platformErrors = computed(() =>
+  platformGroups.value.filter((g) => g.error && !(g.result?.length ?? 0)),
+);
+
+async function loadPlatformPlaylists() {
+  if (!hasMyPlaylistsPlugin.value) {
+    platformGroups.value = [];
+    return;
+  }
+  platformLoading.value = true;
+  try {
+    platformGroups.value = await plugins.getUserPlaylistsAll();
+  } finally {
+    platformLoading.value = false;
+  }
+}
+
+function isPlatformActive(item: PlatformNavItem): boolean {
+  return (
+    route.name === "sourcePlaylist" &&
+    route.params.source === item.sourceId &&
+    route.params.id === item.playlistId
+  );
+}
+
+onMounted(() => void loadPlatformPlaylists());
+
+/* 插件安装/启停/配置变化后重新同步（配置变更会重建沙箱） */
+watch(
+  () => plugins.records,
+  () => void loadPlatformPlaylists(),
+  { deep: true },
+);
 const scrollPill = ref({ top: 0, visible: false });
 const footerPill = ref({ top: 0, visible: false });
 const pillsReady = ref(false);
@@ -73,7 +146,7 @@ onMounted(() => {
 });
 
 watch(
-  () => [route.fullPath, library.playlists.length],
+  () => [route.fullPath, library.playlists.length, platformItems.value.length],
   async () => {
     await nextTick();
     updatePills();
@@ -127,6 +200,44 @@ function isActive(name: string): boolean {
         </li>
         <li v-if="!library.playlists.length" class="nav-empty">还没有歌单，点击 + 创建</li>
       </ul>
+
+      <template v-if="hasMyPlaylistsPlugin">
+        <div class="nav-section-header">
+          <span class="nav-section-title">平台歌单</span>
+          <button
+            class="add-button"
+            :class="{ spinning: platformLoading }"
+            title="同步平台歌单"
+            @click="loadPlatformPlaylists"
+          >
+            <span class="wp-icon">&#xE72C;</span>
+          </button>
+        </div>
+
+        <ul class="nav-list">
+          <li v-for="item in platformItems" :key="item.key">
+            <router-link
+              :to="{
+                name: 'sourcePlaylist',
+                params: { source: item.sourceId, id: item.playlistId },
+                query: { mine: '1' },
+              }"
+              class="nav-item"
+              :class="{ active: isPlatformActive(item) }"
+              :title="item.name"
+            >
+              <span class="wp-icon nav-icon">&#xE8FD;</span>
+              <span class="nav-label ellipsis">{{ item.name }}</span>
+            </router-link>
+          </li>
+          <li v-for="group in platformErrors" :key="`err:${group.record.entry.id}`" class="nav-empty">
+            {{ group.record.entry.manifest.name }}：{{ group.error }}
+          </li>
+          <li v-if="!platformItems.length && !platformErrors.length" class="nav-empty">
+            {{ platformLoading ? "正在同步…" : "暂无平台歌单" }}
+          </li>
+        </ul>
+      </template>
     </div>
 
     <div class="nav-footer">
@@ -311,6 +422,18 @@ function isActive(name: string): boolean {
 .add-button:hover {
   background: var(--wp-card-hover);
   color: var(--wp-text-primary);
+}
+
+/* 同步按钮：同步中图标旋转 */
+.add-button.spinning .wp-icon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .nav-empty {

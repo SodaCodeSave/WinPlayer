@@ -458,6 +458,51 @@ export const usePluginsStore = defineStore("plugins", () => {
     return null;
   }
 
+  /* ------------------------------ 个人歌单（能力：myPlaylists） ------------------------------ */
+
+  /**
+   * 聚合所有支持个人歌单的插件，拉取平台账号的歌单列表。
+   * 单个插件失败（如未登录）不影响其它插件，错误挂在对应分组上供界面提示。
+   */
+  async function getUserPlaylistsAll(): Promise<AggregatedSourceResult<UnifiedPlaylist[]>[]> {
+    const targets = enabledRecords.value.filter((r) => hasCapability(r, "myPlaylists"));
+    return Promise.all(
+      targets.map(async (record): Promise<AggregatedSourceResult<UnifiedPlaylist[]>> => {
+        try {
+          const host = await getHost(record.entry.id);
+          const result = await host.invoke<UnifiedPlaylist[]>("getUserPlaylists", {});
+          const playlists = (result ?? []).map((p) => ({ ...p, sourceId: record.entry.id }));
+          return { record, result: playlists };
+        } catch (error) {
+          return {
+            record,
+            result: null,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+    );
+  }
+
+  /** 某个插件来源的平台歌单列表（加入歌单选择器用） */
+  async function getUserPlaylists(sourceId: string): Promise<UnifiedPlaylist[]> {
+    const host = await getHost(sourceId);
+    const result = await host.invoke<UnifiedPlaylist[]>("getUserPlaylists", {});
+    return (result ?? []).map((p) => ({ ...p, sourceId }));
+  }
+
+  /** 把歌曲加入插件平台的歌单 */
+  async function addToUserPlaylist(sourceId: string, playlistId: string, trackId: string): Promise<void> {
+    const host = await getHost(sourceId);
+    await host.invoke("addToUserPlaylist", { playlistId, trackId });
+  }
+
+  /** 把歌曲从插件平台的歌单移除 */
+  async function removeFromUserPlaylist(sourceId: string, playlistId: string, trackId: string): Promise<void> {
+    const host = await getHost(sourceId);
+    await host.invoke("removeFromUserPlaylist", { playlistId, trackId });
+  }
+
   /** 按 id 找到插件记录，找不到时抛出可读错误 */
   function getRecordOrThrow(sourceId: string): PluginRecord {
     const record = records.value.find((r) => r.entry.id === sourceId);
@@ -510,6 +555,10 @@ export const usePluginsStore = defineStore("plugins", () => {
     getLoginState,
     logout,
     getAvatar,
+    getUserPlaylistsAll,
+    getUserPlaylists,
+    addToUserPlaylist,
+    removeFromUserPlaylist,
     fetchMarketEntries,
   };
 });

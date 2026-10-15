@@ -136,6 +136,10 @@ const INVOKEABLE_METHODS = new Set([
   "logout",
   // 头像（能力：avatar）
   "getAvatar",
+  // 个人歌单（能力：myPlaylists）
+  "getUserPlaylists",
+  "addToUserPlaylist",
+  "removeFromUserPlaylist",
 ]);
 
 async function handleMessage(message: HostMessage): Promise<void> {
