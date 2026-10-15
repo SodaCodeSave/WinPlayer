@@ -47,9 +47,10 @@ function updatePills(): void {
   updatePill(document.querySelector(".nav-footer"), footerPill);
 }
 
-function pillStyle(pill: { top: number; visible: boolean }) {
+/** 定位样式：offset 用于强调胶囊相对药丸的垂直居中偏移（(36-16)/2 = 10px） */
+function pillStyle(pill: { top: number; visible: boolean }, offset = 0) {
   return {
-    top: `${pill.top}px`,
+    top: `${pill.top + offset}px`,
     opacity: pill.visible ? "1" : "0",
     transition: pillsReady.value ? undefined : "none",
   };
@@ -88,6 +89,7 @@ function isActive(name: string): boolean {
   <nav class="sidenav">
     <div class="sidenav-scroll">
       <span class="nav-pill" :style="pillStyle(scrollPill)" aria-hidden="true" />
+      <span class="nav-accent" :style="pillStyle(scrollPill, 10)" aria-hidden="true" />
       <ul class="nav-list">
         <li>
           <router-link :to="{ name: 'recommend' }" class="nav-item" :class="{ active: isActive('recommend') }">
@@ -129,6 +131,7 @@ function isActive(name: string): boolean {
 
     <div class="nav-footer">
       <span class="nav-pill" :style="pillStyle(footerPill)" aria-hidden="true" />
+      <span class="nav-accent" :style="pillStyle(footerPill, 10)" aria-hidden="true" />
       <ul class="nav-list">
         <li>
           <router-link :to="{ name: 'plugins' }" class="nav-item" :class="{ active: isActive('plugins') }">
@@ -229,6 +232,21 @@ function isActive(name: string): boolean {
     opacity 200ms var(--ease-standard);
 }
 
+/* 左侧蓝色强调胶囊：与药丸同源定位（top + 10px 垂直居中），随选中项滑动 */
+.nav-accent {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--wp-accent);
+  z-index: 1;
+  pointer-events: none;
+  transition:
+    top 300ms cubic-bezier(0.1, 0.9, 0.2, 1),
+    opacity 200ms var(--ease-standard);
+}
+
 .nav-footer {
   flex: none;
   position: relative;
@@ -236,18 +254,7 @@ function isActive(name: string): boolean {
   border-top: 1px solid var(--wp-divider);
 }
 
-/* 左侧强调色小条（静态，不参与动画；动画只有选中药丸滑动） */
-.nav-item.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 3px;
-  height: 16px;
-  border-radius: 2px;
-  background: var(--wp-accent);
-  transform: translateY(-50%);
-}
+  /* 强调胶囊由 .nav-accent 绝对定位并参与滑动（不再使用逐项 ::before，避免瞬移） */
 
 .nav-icon {
   font-size: 16px;
