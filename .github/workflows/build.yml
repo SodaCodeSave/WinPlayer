@@ -136,22 +136,7 @@ jobs:
         if: hashFiles('src-tauri/gen/android/**') == ''
         run: pnpm tauri android init
 
-      # 可选签名：配置以下 Secrets 后自动签名，否则产出 debug 签名 APK（仅供测试）
-      #   ANDROID_KEYSTORE_BASE64 : keystore.jks 的 base64
-      #   ANDROID_KEYSTORE_PASSWORD
-      #   ANDROID_KEY_ALIAS
-      #   ANDROID_KEY_PRIVATE_PASSWORD
-      - name: Import signing keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > src-tauri/gen/android/keystore.jks
-          {
-            echo "TAURI_ANDROID_KEYSTORE_PATH=$GITHUB_WORKSPACE/src-tauri/gen/android/keystore.jks"
-            echo "TAURI_ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-            echo "TAURI_ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
-            echo "TAURI_ANDROID_KEYSTORE_PRIVATE_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PRIVATE_PASSWORD }}"
-          } >> "$GITHUB_ENV"
-
+      # 不配置签名，release 构建将使用 debug 密钥签名（仅供测试安装，不可上架商店）
       - name: Build Android APK
         run: pnpm tauri android build --apk --split-per-abi
 
