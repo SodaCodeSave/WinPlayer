@@ -128,7 +128,11 @@ function addSingle(track: UnifiedTrack) {
       </span>
       <span class="col-title">
         <img v-if="row.track.cover" :src="row.track.cover" alt="" class="row-cover" />
-        <span class="title-text ellipsis">{{ trackTitle(row.track) }}</span>
+        <span class="title-main">
+          <span class="title-text ellipsis">{{ trackTitle(row.track) }}</span>
+          <span v-if="row.track.alias" class="title-alias ellipsis">（{{ row.track.alias }}）</span>
+        </span>
+        <span v-if="row.track.vip" class="title-vip">VIP</span>
       </span>
       <span class="col-artist ellipsis">
         <template v-for="(artist, index) in row.artists" :key="`${artist.name}-${index}`">
@@ -273,8 +277,37 @@ function addSingle(track: UnifiedTrack) {
   flex: none;
 }
 
-.title-text {
+.title-main {
+  flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.title-text {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* 别名用浅一号的字体；宽度不足时先于标题收缩（flex-shrink 更大），保证 VIP 标识始终可见 */
+.title-alias {
+  flex: 0 999 auto;
+  min-width: 0;
+  color: var(--wp-text-secondary);
+  font-size: 12px;
+}
+
+.title-vip {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border: 1px solid var(--wp-accent);
+  border-radius: 3px;
+  color: var(--wp-accent);
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 .col-artist {

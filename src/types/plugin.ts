@@ -91,6 +91,10 @@ export interface UnifiedTrack {
   /** 来源内的歌曲 ID */
   id: string;
   name: string;
+  /** 歌曲别名（如译名/港台名）。有值时列表在标题旁以浅色括号显示，空间不足时优先截断 */
+  alias?: string;
+  /** 是否需要 VIP。true 时歌曲标题最右侧显示 VIP 标识（空间不足时最后截断） */
+  vip?: boolean;
   artists: string[];
   album?: string;
   cover?: string;
