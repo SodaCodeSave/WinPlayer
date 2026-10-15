@@ -10,6 +10,7 @@ import { ProgressRing } from "winuionweb";
 import { usePlayerStore } from "@/stores/player";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import SongTable from "@/components/common/SongTable.vue";
+import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import type { AlbumDetail, UnifiedTrack } from "@/types/plugin";
@@ -110,6 +111,7 @@ function shufflePlay() {
 
 <template>
   <div class="wp-page">
+    <MobilePageHeader />
     <template v-if="album">
       <div class="wp-page-header">
         <div class="header-cover">

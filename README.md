@@ -11,6 +11,11 @@
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 
+预览图
+
+![首页](./docs/imgs/PixPin_2026-10-15_19-34-38.png)
+![歌单](./docs/imgs/PixPin_2026-10-15_19-35-17.png)
+
 </div>
 
 ---

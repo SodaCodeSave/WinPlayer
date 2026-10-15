@@ -6,6 +6,7 @@ import { usePlayerStore } from "@/stores/player";
 import { trackArtist, trackTitle } from "@/types/player";
 import type { RecommendResult } from "@/types/plugin";
 import { getCachedData, setCachedData } from "@/services/cache";
+import { useIsMobile } from "@/composables/useIsMobile";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
@@ -14,6 +15,7 @@ import { ProgressRing } from "winuionweb";
 const router = useRouter();
 const plugins = usePluginsStore();
 const player = usePlayerStore();
+const isMobile = useIsMobile();
 
 const loading = ref(false);
 /** 展示模型：缓存与在线共用的精简结构（不含易过时的插件运行时对象） */
@@ -78,6 +80,12 @@ onMounted(loadWithCache);
       <button class="wp-standard-button" :disabled="loading" @click="load">
         <span class="wp-icon">&#xE72C;</span>刷新
       </button>
+    </div>
+
+    <!-- 移动端搜索入口：点击进入整页搜索（桌面端搜索在标题栏） -->
+    <div v-if="isMobile" class="mobile-search" @click="router.push({ name: 'search' })">
+      <span class="wp-icon mobile-search-icon">&#xE721;</span>
+      <span class="mobile-search-placeholder">搜索音乐、歌单</span>
     </div>
 
     <!-- 无可用插件 -->
@@ -145,6 +153,25 @@ onMounted(loadWithCache);
 </template>
 
 <style scoped>
+.mobile-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: 38px;
+  margin-bottom: var(--space-xl);
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-sm);
+  background: var(--wp-control-fill);
+  border: 1px solid var(--wp-control-stroke-secondary);
+  color: var(--wp-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mobile-search-icon {
+  font-size: 13px;
+}
+
 .loading-wrap {
   display: flex;
   flex-direction: column;

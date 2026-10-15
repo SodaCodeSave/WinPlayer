@@ -11,6 +11,7 @@ import { ProgressRing } from "winuionweb";
 import { usePlayerStore } from "@/stores/player";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import SongTable from "@/components/common/SongTable.vue";
+import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import MediaCard from "@/components/common/MediaCard.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
@@ -137,6 +138,7 @@ function shufflePlay() {
 
 <template>
   <div class="wp-page">
+    <MobilePageHeader />
     <template v-if="artist">
       <div class="artist-banner" :class="{ 'no-avatar': !artist.avatar }" :style="bannerStyle">
         <div class="banner-scrim"></div>

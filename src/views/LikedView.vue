@@ -3,6 +3,7 @@ import { useRouter } from "vue-router";
 import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
 import SongTable from "@/components/common/SongTable.vue";
+import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 
 const router = useRouter();
@@ -25,6 +26,7 @@ function shufflePlay() {
 
 <template>
   <div class="wp-page">
+    <MobilePageHeader />
     <template v-if="library.liked.length">
       <div class="wp-page-header">
         <div class="header-cover">
