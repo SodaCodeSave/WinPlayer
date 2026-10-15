@@ -219,7 +219,7 @@ onMounted(refreshCacheStats);
       <div class="settings-card">
         <div class="card-content">
           <div class="card-header">WinPlayer</div>
-          <div class="card-description">版本 0.1.0 · 基于插件的桌面音乐播放器 · MIT License</div>
+          <div class="card-description">版本 1.0.0 · 基于插件的桌面音乐播放器 · MIT License</div>
         </div>
       </div>
 
@@ -230,8 +230,7 @@ onMounted(refreshCacheStats);
             <p>
               本软件的图形界面使用了开源组件库
               <a href="#" @click.prevent="openRepo">WinUIonWeb</a>
-              （作者 Furry-Xiyi），该组件库以 <strong>GPL-3.0-only</strong> 协议发布，是对 Microsoft
-              WinUI 的独立 Web 实现，与 Microsoft 无关联，亦未获 Microsoft 认可或授权。
+              （作者 Furry-Xiyi），该组件库以 <strong>GPL-3.0-only</strong> 协议发布，是对 Microsoft WinUI 的独立 Web 实现
             </p>
             <p>
               WinPlayer 本体源代码以 MIT 协议发布；由于分发物中包含 GPL-3.0
