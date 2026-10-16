@@ -9,6 +9,8 @@ import { getDb } from "@/services/db";
 import { cachedImgUrl } from "@/services/imageCache";
 import { httpFetchJson } from "@/services/proxy";
 import { toast } from "@/services/toast";
+import { applyGithubMirror, resolveAssetUrl } from "@/services/githubMirror";
+import { useSettingsStore } from "@/stores/settings";
 import type {
   AlbumDetail,
   ArtistAlbumsResult,
@@ -72,7 +74,14 @@ export function credentialKeyOf(manifest: PluginManifest): string {
   return manifest.login?.credentialKey || "credential";
 }
 
+/** 官方内置插件市场源：始终存在，不可在设置中删除 */
+export const OFFICIAL_MARKET_SOURCE: MarketSource = {
+  name: "官方市场",
+  url: "https://raw.githubusercontent.com/WinPlayer-dev/plugin-market/main/market-index.json",
+};
+
 export const usePluginsStore = defineStore("plugins", () => {
+  const settingsStore = useSettingsStore();
   const records = ref<PluginRecord[]>([]);
   const loading = ref(false);
 
@@ -202,10 +211,13 @@ export const usePluginsStore = defineStore("plugins", () => {
     }
   }
 
-  /** 从 URL 安装 */
+  /** 从 URL 安装（GitHub 仓库地址 / GitHub 系直链自动走设置的镜像源） */
   async function installFromUrl(url: string): Promise<boolean> {
     try {
-      const entry = await invoke<PluginEntry>("plugin_install_from_url", { url });
+      const entry = await invoke<PluginEntry>("plugin_install_from_url", {
+        url,
+        mirror: settingsStore.githubMirror,
+      });
       await loadInstalled();
       toast(`插件「${entry.manifest.name}」安装成功`, "success");
       return true;
@@ -516,12 +528,28 @@ export const usePluginsStore = defineStore("plugins", () => {
 
   /* ------------------------------ 插件市场 ------------------------------ */
 
-  /** 拉取所有市场源的索引，合并为可安装条目列表 */
-  async function fetchMarketEntries(sources: MarketSource[]): Promise<MarketEntry[]> {
+  /** 全部市场源：官方内置源固定在首位（不可删除），后接用户自建源（按 url 去重） */
+  function allMarketSources(): MarketSource[] {
+    const rest = settingsStore.marketSources.filter(
+      (source) => source.url !== OFFICIAL_MARKET_SOURCE.url,
+    );
+    return [OFFICIAL_MARKET_SOURCE, ...rest];
+  }
+
+  /** 拉取所有市场源的索引，合并为可安装条目列表（GitHub 系地址走镜像） */
+  async function fetchMarketEntries(): Promise<MarketEntry[]> {
+    const mirror = settingsStore.githubMirror;
     const results = await Promise.allSettled(
-      sources.map(async (source) => {
-        const index = await httpFetchJson<MarketIndex>(source.url, 15_000);
-        return (index.plugins ?? []).map((entry) => ({ ...entry, sourceName: source.name }));
+      allMarketSources().map(async (source) => {
+        const index = await httpFetchJson<MarketIndex>(applyGithubMirror(source.url, mirror), 15_000);
+        return (index.plugins ?? []).map((entry) => ({
+          ...entry,
+          sourceName: source.name,
+          // banner 支持相对索引地址的相对路径；GitHub 系图片同样走镜像
+          banner: entry.banner
+            ? applyGithubMirror(resolveAssetUrl(source.url, entry.banner), mirror)
+            : undefined,
+        }));
       }),
     );
     const entries: MarketEntry[] = [];

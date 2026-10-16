@@ -10,6 +10,8 @@ export type ThemePreference = "system" | "light" | "dark";
 export const useSettingsStore = defineStore("settings", () => {
   const theme = ref<ThemePreference>("system");
   const marketSources = ref<MarketSource[]>([]);
+  /** GitHub 镜像源前缀（URL 拼接型，如 https://ghproxy.net/），空串表示直连 */
+  const githubMirror = ref("");
   /** 是否启用系统媒体传输控件（SMTC，仅 Windows） */
   const smtcEnabled = ref(true);
   const loaded = ref(false);
@@ -38,6 +40,7 @@ export const useSettingsStore = defineStore("settings", () => {
   async function load(): Promise<void> {
     theme.value = await getSetting<ThemePreference>("settings.theme", "system");
     marketSources.value = await getSetting<MarketSource[]>("settings.marketSources", []);
+    githubMirror.value = await getSetting<string>("settings.githubMirror", "");
     smtcEnabled.value = await getSetting("settings.smtcEnabled", true);
     applyTheme();
     loaded.value = true;
@@ -54,6 +57,11 @@ export const useSettingsStore = defineStore("settings", () => {
     await setSetting("settings.marketSources", value);
   }
 
+  async function setGithubMirror(value: string): Promise<void> {
+    githubMirror.value = value.trim().replace(/\/+$/, "");
+    await setSetting("settings.githubMirror", githubMirror.value);
+  }
+
   async function setSmtcEnabled(value: boolean): Promise<void> {
     smtcEnabled.value = value;
     await setSetting("settings.smtcEnabled", value);
@@ -62,11 +70,13 @@ export const useSettingsStore = defineStore("settings", () => {
   return {
     theme,
     marketSources,
+    githubMirror,
     smtcEnabled,
     loaded,
     load,
     setTheme,
     setMarketSources,
+    setGithubMirror,
     setSmtcEnabled,
   };
 });

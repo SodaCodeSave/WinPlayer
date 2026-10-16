@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { usePluginsStore, type PluginRecord } from "@/stores/plugins";
-import { useSettingsStore } from "@/stores/settings";
 import { toast } from "@/services/toast";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { ComboBox, ContentDialog, NumberBox, PasswordBox, TextBox, ToggleSwitch } from "winuionweb";
@@ -16,7 +15,6 @@ import type {
 } from "@/types/plugin";
 
 const plugins = usePluginsStore();
-const settings = useSettingsStore();
 
 const tab = ref<"installed" | "market">("installed");
 const urlValue = ref("");
@@ -341,10 +339,9 @@ function onToggle(record: PluginRecord, event: { IsOn: boolean }): void {
 }
 
 async function loadMarket() {
-  if (!settings.marketSources.length) return;
   marketLoading.value = true;
   try {
-    marketEntries.value = await plugins.fetchMarketEntries(settings.marketSources);
+    marketEntries.value = await plugins.fetchMarketEntries();
   } catch (error) {
     toast(`加载插件市场失败: ${error}`, "error");
   } finally {
@@ -358,8 +355,22 @@ function marketInstalled(entry: MarketEntry): boolean {
   return record.entry.manifest.version === entry.version;
 }
 
+const installingId = ref("");
+
 async function installFromMarket(entry: MarketEntry) {
-  await plugins.installFromUrl(entry.url);
+  if (installingId.value) return;
+  installingId.value = entry.id + entry.url;
+  try {
+    await plugins.installFromUrl(entry.url);
+  } finally {
+    installingId.value = "";
+  }
+}
+
+/** 「来源」按钮：优先打开插件主页，无主页时打开插件包地址 */
+function openEntrySource(entry: MarketEntry): void {
+  const url = entry.homepage || entry.url;
+  void openUrl(url);
 }
 
 // 插件列表可能异步加载/安装，按“具备登录能力的插件 id 集合”变化时补查一次登录态
@@ -559,52 +570,48 @@ onUnmounted(() => {
 
     <!-- 插件市场 -->
     <template v-else>
-      <div v-if="!settings.marketSources.length" class="market-empty">
-        <EmptyState
-          icon="&#xF690;"
-          title="还没有配置插件市场源"
-          description="插件市场是一个 JSON 索引地址列表（由社区维护）。在设置中添加市场源地址后，即可在这里浏览和一键安装插件。"
-        />
+      <div class="market-toolbar">
+        <button class="wp-standard-button small" :disabled="marketLoading" @click="loadMarket">
+          <span class="wp-icon">&#xF13E;</span>{{ marketLoading ? "加载中…" : "刷新市场" }}
+        </button>
       </div>
-      <template v-else>
-        <div class="market-toolbar">
-          <button class="wp-standard-button small" :disabled="marketLoading" @click="loadMarket">
-            <span class="wp-icon">&#xF13E;</span>{{ marketLoading ? "加载中…" : "刷新市场" }}
-          </button>
-        </div>
-        <div v-if="!marketEntries.length" class="hint">
-          {{ marketLoading ? "正在加载市场索引…" : "市场索引为空或加载失败" }}
-        </div>
-        <div v-else class="plugin-list">
-          <div v-for="entry in marketEntries" :key="entry.id + entry.url" class="plugin-card market-card">
-            <div class="plugin-main">
-              <div class="plugin-title-row">
-                <span class="plugin-name">{{ entry.name }}</span>
-                <span class="plugin-version">v{{ entry.version }}</span>
-              </div>
-              <div class="plugin-desc">{{ entry.description || "无描述" }}</div>
-              <div class="plugin-meta">
-                <span v-if="entry.author">作者：{{ entry.author }}</span>
-              </div>
+      <div v-if="!marketEntries.length" class="hint">
+        {{ marketLoading ? "正在加载市场索引…" : "市场索引为空或加载失败" }}
+      </div>
+      <div v-else class="market-grid">
+        <div v-for="entry in marketEntries" :key="entry.id + entry.url" class="market-card">
+          <div class="market-banner">
+            <img v-if="entry.banner" :src="entry.banner" alt="" loading="lazy" />
+            <span v-else class="wp-icon banner-fallback">&#xEF83;</span>
+          </div>
+          <div class="market-body">
+            <div class="market-title-row">
+              <span class="market-name">{{ entry.name }}</span>
+              <span v-if="entry.author" class="market-author">{{ entry.author }}</span>
             </div>
-            <div class="plugin-side">
-              <button
-                v-if="!marketInstalled(entry)"
-                class="wp-accent-button small"
-                @click="installFromMarket(entry)"
-              >
-                安装
-              </button>
-              <span v-else class="installed-mark">
-                <span class="wp-icon">&#xF299;</span>已安装
-              </span>
-              <button v-if="entry.homepage" class="wp-standard-button small" @click="openUrl(entry.homepage!)">
-                主页
-              </button>
+            <div class="market-desc">{{ entry.description || "无简介" }}</div>
+            <div class="market-foot">
+              <span class="market-version">v{{ entry.version }}</span>
+              <div class="market-actions">
+                <button class="wp-standard-button small" @click="openEntrySource(entry)">
+                  来源
+                </button>
+                <button
+                  v-if="!marketInstalled(entry)"
+                  class="wp-accent-button small"
+                  :disabled="installingId === entry.id + entry.url"
+                  @click="installFromMarket(entry)"
+                >
+                  {{ installingId === entry.id + entry.url ? "安装中…" : "安装" }}
+                </button>
+                <span v-else class="installed-mark">
+                  <span class="wp-icon">&#xF299;</span>已安装
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </template>
+      </div>
     </template>
 
     <ContentDialog
@@ -619,7 +626,9 @@ onUnmounted(() => {
           PlaceholderText="https://example.com/my-plugin.zip"
           @update:Text="urlValue = String($event ?? '')"
         />
-        <div class="dialog-hint">支持 .zip 插件包或单文件 .json 插件的直链地址</div>
+        <div class="dialog-hint">
+          支持 .zip 插件包、单文件 .json 插件或 GitHub 仓库地址（自动下载仓库代码安装）
+        </div>
       </div>
     </ContentDialog>
 
@@ -913,8 +922,98 @@ onUnmounted(() => {
   margin-bottom: var(--space-lg);
 }
 
+/** 市场卡片：banner 大图 + 名称/作者 + 简介 + 来源/安装按钮 */
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+
 .market-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--wp-card);
+  border: 1px solid var(--wp-control-stroke);
+  border-radius: var(--radius-lg);
+}
+
+.market-banner {
+  aspect-ratio: 2 / 1;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--wp-accent-light), var(--wp-control-fill-secondary));
+}
+
+.market-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.banner-fallback {
+  font-size: 40px;
+  color: var(--wp-text-tertiary);
+}
+
+.market-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+}
+
+.market-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.market-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.market-author {
+  font-size: 12px;
+  color: var(--wp-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-desc {
+  font-size: 12px;
+  color: var(--wp-text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.market-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-top: var(--space-sm);
+}
+
+.market-version {
+  font-size: 12px;
+  color: var(--wp-text-tertiary);
+}
+
+.market-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
 }
 
 .installed-mark {

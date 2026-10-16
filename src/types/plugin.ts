@@ -404,7 +404,9 @@ export interface MarketEntry {
   version: string;
   description?: string;
   author?: string;
-  /** 插件包地址（.zip 或单文件 .json） */
+  /** 卡片大图地址（支持相对市场索引的相对路径），缺省时显示渐变占位 */
+  banner?: string;
+  /** 插件包地址（.zip / 单文件 .json / GitHub 仓库地址） */
   url: string;
   homepage?: string;
 }

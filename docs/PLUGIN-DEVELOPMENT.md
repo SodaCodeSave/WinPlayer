@@ -350,7 +350,7 @@ export default {
 
 ## 插件市场索引格式
 
-市场源是一个 JSON 文件的 URL（可在设置页添加多个）：
+市场源是一个 JSON 文件的 URL（官方内置源固定存在，可在设置页追加多个）。`url` 支持插件包直链（.zip / 单文件 .json）或 GitHub 仓库地址（自动下载默认分支代码安装）；经 GitHub 下载时会自动拼接设置里配置的 GitHub 镜像源前缀。
 
 ```json
 {
@@ -362,12 +362,15 @@ export default {
       "version": "1.2.0",
       "description": "简介",
       "author": "作者",
+      "banner": "banners/my-source.png",
       "url": "https://example.com/my-plugin.zip",
       "homepage": "https://example.com"
     }
   ]
 }
 ```
+
+`banner` 为可选的卡片大图地址（约 2:1 比例），支持相对市场索引的相对路径，缺省时显示渐变占位。
 
 示例见 [market-index.example.json](./market-index.example.json)。
 

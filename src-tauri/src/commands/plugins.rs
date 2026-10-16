@@ -308,29 +308,127 @@ pub fn plugin_install_from_path(app: tauri::AppHandle, src: String) -> Result<Pl
     }
 }
 
-/// 从 URL 安装：下载后按 zip / 单文件 JSON 处理
+/* ------------------------------ GitHub 镜像 ------------------------------ */
+
+/// 需要走镜像前缀拼接的 GitHub 系域名
+const GITHUB_URL_PREFIXES: [&str; 6] = [
+    "https://github.com/",
+    "https://raw.githubusercontent.com/",
+    "https://codeload.github.com/",
+    "https://api.github.com/",
+    "https://gist.githubusercontent.com/",
+    "https://objects.githubusercontent.com/",
+];
+
+/// github.com 下不是「仓库根地址」的路径首段
+const GITHUB_NON_REPO_SEGMENTS: [&str; 7] = [
+    "orgs", "topics", "features", "settings", "notifications", "explore", "search",
+];
+
+/// 归一化镜像前缀：去空白与结尾斜杠，空串视为未配置
+fn normalize_mirror(mirror: &str) -> Option<String> {
+    let trimmed = mirror.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn is_github_url(url: &str) -> bool {
+    GITHUB_URL_PREFIXES.iter().any(|p| url.starts_with(p))
+}
+
+/// 仅对 GitHub 系地址拼接镜像前缀（prefix + "/" + url）
+fn apply_mirror(url: &str, mirror: Option<&str>) -> String {
+    match mirror {
+        Some(m) if is_github_url(url) => format!("{m}/{url}"),
+        _ => url.to_string(),
+    }
+}
+
+/// 识别 GitHub 仓库根地址（https://github.com/{owner}/{repo}[/tree/{branch}]）。
+/// 未指定分支时返回 main/master 两个候选；指定了分支则补充 tag 归档候选。
+fn github_repo_candidates(url: &str) -> Option<(String, String, Vec<String>)> {
+    let rest = url.strip_prefix("https://github.com/")?;
+    let rest = rest.trim_end_matches('/');
+    let segs: Vec<&str> = rest.split('/').collect();
+    if segs.len() < 2 || segs[0].is_empty() || segs[1].is_empty() {
+        return None;
+    }
+    if GITHUB_NON_REPO_SEGMENTS.contains(&segs[0]) {
+        return None;
+    }
+    match segs.len() {
+        2 => Some((
+            segs[0].to_string(),
+            segs[1].to_string(),
+            vec!["main".into(), "master".into()],
+        )),
+        4 if segs[2] == "tree" && !segs[3].is_empty() => Some((
+            segs[0].to_string(),
+            segs[1].to_string(),
+            vec![format!("heads/{}", segs[3]), format!("tags/{}", segs[3])],
+        )),
+        _ => None,
+    }
+}
+
+async fn download_bytes(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Vec<u8>, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("下载失败: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("下载失败: HTTP {}", response.status()));
+    }
+    response
+        .bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| format!("读取内容失败: {e}"))
+}
+
+/// 从 URL 安装：支持 .zip / 单文件 .json 直链，以及 GitHub 仓库地址
+/// （自动转为默认分支归档下载）；GitHub 系地址会拼接镜像前缀。
 #[tauri::command]
 pub async fn plugin_install_from_url(
     app: tauri::AppHandle,
     url: String,
+    mirror: Option<String>,
 ) -> Result<PluginEntry, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .user_agent("WinPlayer/0.1")
         .build()
         .map_err(|e| e.to_string())?;
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("下载插件失败: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!("下载插件失败: HTTP {}", response.status()));
+    let mirror = mirror.as_deref().and_then(normalize_mirror);
+
+    // GitHub 仓库地址：依次尝试分支归档 zip（仓库根目录即插件）
+    if let Some((owner, repo, refs)) = github_repo_candidates(&url) {
+        for reference in refs {
+            let archive =
+                format!("https://codeload.github.com/{owner}/{repo}/zip/refs/{reference}");
+            let Ok(bytes) = download_bytes(&client, &apply_mirror(&archive, mirror.as_deref()))
+                .await
+            else {
+                continue;
+            };
+            if bytes.starts_with(b"PK") {
+                return install_from_zip(&app, &bytes);
+            }
+        }
+        return Err(format!(
+            "从 GitHub 仓库 {owner}/{repo} 安装失败：未找到可下载的分支归档（已尝试 main/master）"
+        ));
     }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("读取插件内容失败: {e}"))?;
+
+    let full_url = apply_mirror(&url, mirror.as_deref());
+    let bytes = download_bytes(&client, &full_url).await?;
 
     // 优先按单文件 JSON 识别，失败则按 zip 处理
     if let Ok(text) = std::str::from_utf8(&bytes) {

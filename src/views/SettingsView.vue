@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ComboBox, TextBox, ToggleSwitch } from "winuionweb";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings";
+import { OFFICIAL_MARKET_SOURCE } from "@/stores/plugins";
 import { toast } from "@/services/toast";
 import { clearDataCache, dataCacheSize } from "@/services/cache";
 import type { MarketSource } from "@/types/plugin";
@@ -15,6 +16,9 @@ const isWindows = useIsWindows();
 
 const newSourceName = ref("");
 const newSourceUrl = ref("");
+
+/** GitHub 镜像源编辑草稿（进入设置页时从已加载的设置初始化） */
+const mirrorDraft = ref("");
 
 /** 缓存占用（进入设置页与清理后重新统计） */
 const imageCount = ref(0);
@@ -116,11 +120,21 @@ function openRepo() {
   void openUrl("https://github.com/Furry-Xiyi/WinUIonWeb");
 }
 
+function saveMirror() {
+  void settings.setGithubMirror(mirrorDraft.value).then(() =>
+    toast("GitHub 镜像源已保存", "success"),
+  );
+}
+
+onMounted(() => {
+  mirrorDraft.value = settings.githubMirror;
+  void refreshCacheStats();
+});
+
 function onSmtcToggle(event: { IsOn: boolean }): void {
   void settings.setSmtcEnabled(Boolean(event?.IsOn));
 }
 
-onMounted(refreshCacheStats);
 </script>
 
 <template>
@@ -178,7 +192,25 @@ onMounted(refreshCacheStats);
 
     <!-- 插件市场 -->
     <section class="settings-section">
-      <h2 class="settings-section-title">插件市场源</h2>
+      <h2 class="settings-section-title">插件市场</h2>
+      <div class="settings-card">
+        <div class="card-content">
+          <div class="card-header">GitHub 镜像源</div>
+          <div class="card-description">
+            配置后，凡是经 GitHub 下载的内容（插件仓库安装、市场索引、卡片图片）会自动在此前缀后拼接原始地址加速访问，例如 https://ghproxy.net/ 。留空则直连。
+          </div>
+        </div>
+        <div class="mirror-edit">
+          <TextBox
+            class="mirror-input"
+            :Text="mirrorDraft"
+            PlaceholderText="https://ghproxy.net/"
+            @update:Text="mirrorDraft = String($event ?? '')"
+          />
+          <button class="wp-standard-button small" @click="saveMirror">保存</button>
+        </div>
+      </div>
+
       <div class="settings-card column">
         <div class="card-content">
           <div class="card-header">市场源列表</div>
@@ -187,7 +219,16 @@ onMounted(refreshCacheStats);
           </div>
         </div>
 
-        <ul v-if="settings.marketSources.length" class="source-list">
+        <ul class="source-list">
+          <li class="source-item">
+            <div class="source-info">
+              <div class="source-name">
+                {{ OFFICIAL_MARKET_SOURCE.name }}
+                <span class="builtin-badge">内置</span>
+              </div>
+              <div class="source-url ellipsis">{{ OFFICIAL_MARKET_SOURCE.url }}</div>
+            </div>
+          </li>
           <li v-for="(source, index) in settings.marketSources" :key="source.url" class="source-item">
             <div class="source-info">
               <div class="source-name">{{ source.name }}</div>
@@ -196,7 +237,6 @@ onMounted(refreshCacheStats);
             <button class="wp-standard-button small danger" @click="removeSource(index)">移除</button>
           </li>
         </ul>
-        <div v-else class="source-empty">还没有添加市场源</div>
 
         <div class="source-add">
           <TextBox
@@ -313,6 +353,16 @@ onMounted(refreshCacheStats);
   flex: none;
 }
 
+.mirror-edit {
+  display: flex;
+  gap: var(--space-md);
+  flex: none;
+}
+
+.mirror-input {
+  width: 280px;
+}
+
 .source-list {
   list-style: none;
   margin: 0;
@@ -340,17 +390,23 @@ onMounted(refreshCacheStats);
 .source-name {
   font-size: 13px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.builtin-badge {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--wp-accent);
+  background: var(--wp-accent-light);
+  border-radius: 8px;
+  padding: 1px 8px;
 }
 
 .source-url {
   font-size: 12px;
   color: var(--wp-text-tertiary);
-}
-
-.source-empty {
-  font-size: 12px;
-  color: var(--wp-text-tertiary);
-  padding: var(--space-md) 0;
 }
 
 .source-add {
