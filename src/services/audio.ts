@@ -39,8 +39,15 @@ export class AudioEngine {
     this.audio.addEventListener("pause", () => this.emit("paused"));
     this.audio.addEventListener("waiting", () => this.emit("waiting"));
     this.audio.addEventListener("error", () => {
-      const code = this.audio.error?.code;
-      this.emit("error", describeMediaError(code));
+      const error = this.audio.error;
+      // 诊断日志：媒体层真实错误码/信息与当前源（排查 403、格式不支持等问题用）
+      console.error("[audio] 媒体加载失败", {
+        code: error?.code,
+        message: error?.message,
+        describe: describeMediaError(error?.code),
+        src: this.audio.currentSrc || this.audio.src,
+      });
+      this.emit("error", describeMediaError(error?.code));
     });
   }
 
@@ -74,12 +81,24 @@ export class AudioEngine {
 
   /** 设置播放源并加载（不自动播放） */
   load(src: string): void {
+    console.log(`[audio] load src(${src.length}): ${src.slice(0, 200)}`);
     this.audio.src = src;
     this.audio.load();
   }
 
   async play(): Promise<void> {
-    await this.audio.play();
+    try {
+      await this.audio.play();
+    } catch (error) {
+      // 诊断日志：play() 拒绝时附带媒体层错误详情（NotSupportedError 多为 403/格式问题）
+      const mediaError = this.audio.error;
+      console.error("[audio] play() 失败", {
+        error: String(error),
+        mediaError: mediaError ? { code: mediaError.code, message: mediaError.message } : null,
+        src: this.audio.currentSrc || this.audio.src,
+      });
+      throw error;
+    }
   }
 
   pause(): void {

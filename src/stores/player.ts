@@ -82,6 +82,7 @@ export const usePlayerStore = defineStore("player", () => {
     if (index < 0 || index >= queue.value.length) return;
     currentIndex.value = index;
     const track = queue.value[index].track;
+    console.log(`[player] 播放请求 #${index}: ${track.sourceId}:${track.id} 《${track.name}》`);
     loading.value = true;
     try {
       const result = await plugins.getSongUrl(track);
