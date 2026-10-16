@@ -33,7 +33,7 @@ const items = useToasts();
 
 .toast-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-xl);
   background: var(--wp-flyout);
@@ -41,12 +41,13 @@ const items = useToasts();
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-flyout);
   font-size: 13px;
-  max-width: 520px;
+  max-width: 560px;
 }
 
 .toast-icon {
   font-size: 14px;
   flex: none;
+  margin-top: 1px;
 }
 
 .toast-item.error .toast-icon {
@@ -62,9 +63,9 @@ const items = useToasts();
 }
 
 .toast-message {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* 长报错信息需完整可读：允许多行换行而非省略号截断 */
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .toast-enter-active,

@@ -349,10 +349,30 @@ async function loadMarket() {
   }
 }
 
-function marketInstalled(entry: MarketEntry): boolean {
-  const record = plugins.records.find((r) => r.entry.id === entry.id);
-  if (!record) return false;
-  return record.entry.manifest.version === entry.version;
+/** 本地已安装版本（未安装返回空串） */
+function localVersionOf(entry: MarketEntry): string {
+  return (
+    plugins.records.find((r) => r.entry.id === entry.id)?.entry.manifest.version ?? ""
+  );
+}
+
+/** 逐段比较点分版本号，返回 a-b 的正负 */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/** 市场条目相对本地插件的状态：未安装 / 本地版本更低可更新 / 已是最新 */
+function marketStatus(entry: MarketEntry): "none" | "updatable" | "latest" {
+  const local = localVersionOf(entry);
+  if (!local) return "none";
+  return compareVersions(local, String(entry.version ?? "0")) < 0 ? "updatable" : "latest";
 }
 
 const installingId = ref("");
@@ -371,6 +391,16 @@ async function installFromMarket(entry: MarketEntry) {
 function openEntrySource(entry: MarketEntry): void {
   const url = entry.homepage || entry.url;
   void openUrl(url);
+}
+
+/** 市场卡片「卸载」：复用已安装列表的确认对话框 */
+async function uninstallFromMarket(entry: MarketEntry) {
+  const record = plugins.records.find((r) => r.entry.id === entry.id);
+  if (!record) return;
+  uninstallTarget.value = record;
+  const result = await uninstallDialogRef.value?.ShowAsync();
+  uninstallTarget.value = null;
+  if (result === "Primary") await plugins.uninstall(record.entry.id);
 }
 
 // 插件列表可能异步加载/安装，按“具备登录能力的插件 id 集合”变化时补查一次登录态
@@ -591,22 +621,27 @@ onUnmounted(() => {
             </div>
             <div class="market-desc">{{ entry.description || "无简介" }}</div>
             <div class="market-foot">
-              <span class="market-version">v{{ entry.version }}</span>
+              <span
+                class="market-version"
+                :title="marketStatus(entry) === 'updatable' ? `本地 v${localVersionOf(entry)}` : ''"
+              >
+                v{{ entry.version }}
+              </span>
               <div class="market-actions">
                 <button class="wp-standard-button small" @click="openEntrySource(entry)">
                   来源
                 </button>
                 <button
-                  v-if="!marketInstalled(entry)"
+                  v-if="marketStatus(entry) !== 'latest'"
                   class="wp-accent-button small"
                   :disabled="installingId === entry.id + entry.url"
                   @click="installFromMarket(entry)"
                 >
-                  {{ installingId === entry.id + entry.url ? "安装中…" : "安装" }}
+                  {{ installingId === entry.id + entry.url ? "安装中…" : marketStatus(entry) === "updatable" ? "更新" : "安装" }}
                 </button>
-                <span v-else class="installed-mark">
-                  <span class="wp-icon">&#xF299;</span>已安装
-                </span>
+                <button v-else class="wp-standard-button small" @click="uninstallFromMarket(entry)">
+                  卸载
+                </button>
               </div>
             </div>
           </div>
@@ -1014,14 +1049,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-}
-
-.installed-mark {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  font-size: 12px;
-  color: var(--wp-success);
 }
 
 .dialog-form {

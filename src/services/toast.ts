@@ -12,14 +12,20 @@ const state = reactive<{ items: ToastItem[] }>({ items: [] });
 
 let counter = 0;
 
-export function toast(message: string, type: ToastItem["type"] = "info", duration = 3200): void {
+export function toast(
+  message: string,
+  type: ToastItem["type"] = "info",
+  duration?: number,
+): void {
   counter += 1;
   const item: ToastItem = { id: counter, message, type };
   state.items.push(item);
+  // 错误信息通常较长，停留更久以便完整阅读
+  const actual = duration ?? (type === "error" ? 6500 : 3200);
   window.setTimeout(() => {
     const index = state.items.findIndex((t) => t.id === item.id);
     if (index >= 0) state.items.splice(index, 1);
-  }, duration);
+  }, actual);
 }
 
 export function useToasts(): ToastItem[] {

@@ -408,22 +408,77 @@ pub async fn plugin_install_from_url(
         .map_err(|e| e.to_string())?;
     let mirror = mirror.as_deref().and_then(normalize_mirror);
 
-    // GitHub 仓库地址：依次尝试分支归档 zip（仓库根目录即插件）
+    // GitHub 仓库地址安装顺序：
+    // 1) 镜像源下载最新 Release（优先 zip 资产，其次源码 zipball）
+    // 2) 镜像源 codeload 分支归档
+    // 3) 直连 codeload 兜底
+    // 每次尝试的具体失败原因都会收集进最终错误信息，便于排查。
     if let Some((owner, repo, refs)) = github_repo_candidates(&url) {
-        for reference in refs {
-            let archive =
-                format!("https://codeload.github.com/{owner}/{repo}/zip/refs/{reference}");
-            let Ok(bytes) = download_bytes(&client, &apply_mirror(&archive, mirror.as_deref()))
-                .await
-            else {
-                continue;
-            };
-            if bytes.starts_with(b"PK") {
-                return install_from_zip(&app, &bytes);
+        let mut errors: Vec<String> = Vec::new();
+
+        // 1) 镜像源最新 Release（未配置镜像时跳过，避免直连 api 卡住）
+        if let Some(m) = mirror.as_deref() {
+            let api = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+            match download_bytes(&client, &apply_mirror(&api, Some(m))).await {
+                Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
+                    Ok(release) => {
+                        let mut candidates: Vec<String> = release
+                            .get("assets")
+                            .and_then(Value::as_array)
+                            .map(|assets| {
+                                assets
+                                    .iter()
+                                    .filter_map(|a| {
+                                        a.get("browser_download_url").and_then(Value::as_str)
+                                    })
+                                    .filter(|u| u.to_lowercase().ends_with(".zip"))
+                                    .map(String::from)
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        if let Some(zipball) = release.get("zipball_url").and_then(Value::as_str) {
+                            candidates.push(zipball.to_string());
+                        }
+                        if candidates.is_empty() {
+                            errors.push(format!("{api}: 最新 Release 无 zip 资产"));
+                        }
+                        for download in candidates {
+                            match download_bytes(&client, &apply_mirror(&download, Some(m))).await {
+                                Ok(bytes) if bytes.starts_with(b"PK") => {
+                                    return install_from_zip(&app, &bytes);
+                                }
+                                Ok(_) => errors.push(format!("{download}: 响应不是有效的 zip")),
+                                Err(e) => errors.push(format!("{download}: {e}")),
+                            }
+                        }
+                    }
+                    Err(e) => errors.push(format!("{api}: 解析 Release 信息失败: {e}")),
+                },
+                Err(e) => errors.push(format!("{api}: {e}")),
             }
         }
+
+        // 2) 镜像源 codeload → 3) 直连 codeload
+        for reference in refs {
+            let archive = format!("https://codeload.github.com/{owner}/{repo}/zip/refs/{reference}");
+            let attempts: Vec<String> = match mirror.as_deref() {
+                Some(m) => vec![format!("{m}/{archive}"), archive],
+                None => vec![archive],
+            };
+            for attempt in attempts {
+                match download_bytes(&client, &attempt).await {
+                    Ok(bytes) if bytes.starts_with(b"PK") => {
+                        return install_from_zip(&app, &bytes);
+                    }
+                    Ok(_) => errors.push(format!("{attempt}: 响应不是有效的 zip")),
+                    Err(e) => errors.push(format!("{attempt}: {e}")),
+                }
+            }
+        }
+
         return Err(format!(
-            "从 GitHub 仓库 {owner}/{repo} 安装失败：未找到可下载的分支归档（已尝试 main/master）"
+            "从 GitHub 仓库 {owner}/{repo} 安装失败，各下载地址尝试结果：{}",
+            errors.join("；")
         ));
     }
 
