@@ -22,13 +22,18 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 使用 rustls（纯 Rust TLS），避免依赖系统 OpenSSL，便于 Android/Linux 交叉编译与打包
-reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls", "blocking"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "sync"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 rand = "0.9"
 # 图片缓存：解码并压缩（最长边 512、JPEG）后落盘
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+
+# 原生音频播放：symphonia 解码（无 opus，symphonia 0.5 暂不支持）、rodio 输出（Windows WASAPI / Android AAudio）
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "flac", "pcm", "vorbis", "ogg"] }
+rodio = { version = "0.20", default-features = false }
+rtrb = "0.3"
 
 # SMTC（系统媒体传输控件）：仅 Windows 平台
 [target.'cfg(windows)'.dependencies]

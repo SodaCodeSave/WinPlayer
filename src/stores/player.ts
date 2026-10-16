@@ -1,4 +1,4 @@
-/** 播放器状态与控制（队列 / 模式 / 歌词），底层为 HTML5 Audio 引擎 */
+/** 播放器状态与控制（队列 / 模式 / 歌词），底层为原生 Rust 音频引擎 */
 
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
@@ -87,6 +87,8 @@ export const usePlayerStore = defineStore("player", () => {
     try {
       const result = await plugins.getSongUrl(track);
       loadedTrackKey = trackUid(track);
+      // 先重置时长，防止上一曲的时长残留（新时长由引擎事件上报）
+      duration.value = track.duration ? track.duration / 1000 : 0;
       engine.load(result.url);
       engine.volume = volume.value;
       engine.muted = muted.value;

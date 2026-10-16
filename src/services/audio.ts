@@ -1,10 +1,15 @@
 /**
- * 音频引擎：HTML5 Audio 封装。
+ * 音频引擎：原生 Rust 播放引擎桥接。
  *
- * 预留均衡器（EQ）扩展点：后续接入 Web Audio API 时，
- * 在 connectToOutput() 处插入 BiquadFilterNode 链即可，
- * 播放器上层（store / UI）无需改动。
+ * 后端（src-tauri/src/player）负责解码（symphonia，支持 FLAC/OGG 等
+ * 更多格式）、10 段均衡器 DSP 与音频输出；前端只通过 Tauri 命令与
+ * 事件控制播放，对上层（store / UI）暴露与旧 HTML5 Audio 相同的接口。
+ *
+ * 非 Tauri 环境（纯浏览器开发预览）下降级为 no-op。
  */
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface AudioEngineEvents {
   timeupdate: (currentTime: number, duration: number) => void;
@@ -18,103 +23,169 @@ export interface AudioEngineEvents {
 
 type EventName = keyof AudioEngineEvents;
 
-export class AudioEngine {
-  private readonly audio: HTMLAudioElement;
-  private readonly listeners = new Map<EventName, Set<(...args: never[]) => void>>();
+/** seek 后忽略回跳进度事件的时长（ms）：后端旧数据排空期间仍会上报旧位置 */
+const SEEK_GUARD_MS = 800;
 
-  /** EQ 是否已启用（当前版本为直通，恒为 false） */
-  readonly eqEnabled = false;
+export class AudioEngine {
+  private readonly listeners = new Map<EventName, Set<(...args: never[]) => void>>();
+  private readonly inTauri: boolean;
+  private unlisteners: Array<() => void> = [];
+
+  private _currentTime = 0;
+  private _duration = 0;
+  private _paused = true;
+  private _volume = 0.8;
+  private _muted = false;
+  /** 最近一次 seek 的时间与时刻（用于过滤回跳进度） */
+  private seekTarget = 0;
+  private seekAt = 0;
 
   constructor() {
-    this.audio = new Audio();
-    this.audio.preload = "auto";
-    this.audio.addEventListener("timeupdate", () => {
-      this.emit("timeupdate", this.audio.currentTime, this.duration);
-    });
-    this.audio.addEventListener("durationchange", () => {
-      this.emit("durationchange", this.duration);
-    });
-    this.audio.addEventListener("ended", () => this.emit("ended"));
-    this.audio.addEventListener("playing", () => this.emit("playing"));
-    this.audio.addEventListener("pause", () => this.emit("paused"));
-    this.audio.addEventListener("waiting", () => this.emit("waiting"));
-    this.audio.addEventListener("error", () => {
-      const error = this.audio.error;
-      // 诊断日志：媒体层真实错误码/信息与当前源（排查 403、格式不支持等问题用）
-      console.error("[audio] 媒体加载失败", {
-        code: error?.code,
-        message: error?.message,
-        describe: describeMediaError(error?.code),
-        src: this.audio.currentSrc || this.audio.src,
+    this.inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (this.inTauri) {
+      void this.bindNativeEvents();
+    }
+  }
+
+  private async bindNativeEvents(): Promise<void> {
+    const on = async (event: string, handler: (payload: unknown) => void) => {
+      this.unlisteners.push(await listen(event, (e) => handler(e.payload)));
+    };
+    try {
+      await on("player://progress", (payload) => {
+        const p = payload as { currentTime?: number; duration?: number };
+        const time = typeof p.currentTime === "number" ? p.currentTime : 0;
+        // seek 后短暂忽略旧位置的进度，避免进度条回跳
+        const inGuard = Date.now() - this.seekAt < SEEK_GUARD_MS;
+        if (inGuard && time < this.seekTarget - 0.5) return;
+        this._currentTime = time;
+        if (typeof p.duration === "number" && p.duration > 0 && p.duration !== this._duration) {
+          this._duration = p.duration;
+          this.emit("durationchange", p.duration);
+        }
+        this.emit("timeupdate", time, this._duration);
       });
-      this.emit("error", describeMediaError(error?.code));
-    });
+      await on("player://duration", (payload) => {
+        const d = (payload as { duration?: number }).duration;
+        if (typeof d === "number" && d > 0 && d !== this._duration) {
+          this._duration = d;
+          this.emit("durationchange", d);
+        }
+      });
+      await on("player://state", (payload) => {
+        const state = (payload as { state?: string }).state;
+        if (state === "playing") {
+          this._paused = false;
+          this.emit("playing");
+        } else if (state === "paused") {
+          this._paused = true;
+          this.emit("paused");
+        } else if (state === "buffering") {
+          if (!this._paused) this.emit("waiting");
+        } else if (state === "idle") {
+          this._currentTime = 0;
+          this._duration = 0;
+          this._paused = true;
+          this.emit("paused");
+        }
+      });
+      await on("player://ended", () => this.emit("ended"));
+      await on("player://error", (payload) => {
+        const message = (payload as { message?: string }).message ?? "播放出错";
+        this._paused = true;
+        this.emit("error", message);
+      });
+    } catch (error) {
+      console.error("[audio] 原生播放事件监听失败", error);
+    }
   }
 
   get currentTime(): number {
-    return this.audio.currentTime;
+    return this._currentTime;
   }
 
   get duration(): number {
-    return Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
+    return this._duration;
   }
 
   get paused(): boolean {
-    return this.audio.paused;
+    return this._paused;
   }
 
   get volume(): number {
-    return this.audio.volume;
+    return this._volume;
   }
 
   set volume(value: number) {
-    this.audio.volume = Math.min(1, Math.max(0, value));
+    this._volume = Math.min(1, Math.max(0, value));
+    this.applyVolume();
   }
 
   get muted(): boolean {
-    return this.audio.muted;
+    return this._muted;
   }
 
   set muted(value: boolean) {
-    this.audio.muted = value;
+    this._muted = value;
+    this.applyVolume();
   }
 
-  /** 设置播放源并加载（不自动播放） */
+  /** 静音走音量归零（后端 Sink 只有音量参数） */
+  private applyVolume(): void {
+    if (!this.inTauri) return;
+    const effective = this._muted ? 0 : this._volume;
+    void invoke("player_set_volume", { volume: effective }).catch(() => {});
+  }
+
+  /** 设置播放源并加载（后端开始缓冲，不自动播放） */
   load(src: string): void {
     console.log(`[audio] load src(${src.length}): ${src.slice(0, 200)}`);
-    this.audio.src = src;
-    this.audio.load();
+    this._currentTime = 0;
+    this._duration = 0;
+    this._paused = true;
+    if (!this.inTauri) {
+      console.warn("[audio] 非 Tauri 环境，原生播放引擎不可用");
+      return;
+    }
+    void invoke("player_load", { url: src }).catch((error) => {
+      this.emit("error", `加载音频失败: ${error}`);
+    });
   }
 
   async play(): Promise<void> {
-    try {
-      await this.audio.play();
-    } catch (error) {
-      // 诊断日志：play() 拒绝时附带媒体层错误详情（NotSupportedError 多为 403/格式问题）
-      const mediaError = this.audio.error;
-      console.error("[audio] play() 失败", {
-        error: String(error),
-        mediaError: mediaError ? { code: mediaError.code, message: mediaError.message } : null,
-        src: this.audio.currentSrc || this.audio.src,
-      });
-      throw error;
-    }
+    this._paused = false;
+    if (!this.inTauri) return;
+    await invoke("player_play");
   }
 
   pause(): void {
-    this.audio.pause();
+    this._paused = true;
+    if (!this.inTauri) return;
+    void invoke("player_pause").catch(() => {});
   }
 
   seek(seconds: number): void {
-    if (Number.isFinite(seconds)) {
-      this.audio.currentTime = Math.max(0, seconds);
-    }
+    if (!Number.isFinite(seconds)) return;
+    const target = Math.max(0, seconds);
+    this._currentTime = target;
+    this.seekTarget = target;
+    this.seekAt = Date.now();
+    if (!this.inTauri) return;
+    void invoke("player_seek", { seconds: target }).catch(() => {});
   }
 
   stop(): void {
-    this.audio.pause();
-    this.audio.removeAttribute("src");
-    this.audio.load();
+    this._currentTime = 0;
+    this._duration = 0;
+    this._paused = true;
+    if (!this.inTauri) return;
+    void invoke("player_stop").catch(() => {});
+  }
+
+  /** 设置均衡器（10 段，-12 ~ +12 dB） */
+  setEq(enabled: boolean, gains: number[]): void {
+    if (!this.inTauri) return;
+    void invoke("player_set_eq", { enabled, gains }).catch(() => {});
   }
 
   on<K extends EventName>(event: K, listener: AudioEngineEvents[K]): () => void {
@@ -135,25 +206,6 @@ export class AudioEngine {
     for (const listener of set) {
       (listener as (...a: unknown[]) => void)(...args);
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // 均衡器预留接口（当前版本不启用；接入 Web Audio 后在此维护 BiquadFilter 链）
-  // ---------------------------------------------------------------------------
-}
-
-function describeMediaError(code: number | undefined): string {
-  switch (code) {
-    case MediaError.MEDIA_ERR_ABORTED:
-      return "播放被中断";
-    case MediaError.MEDIA_ERR_NETWORK:
-      return "网络错误，无法加载音频";
-    case MediaError.MEDIA_ERR_DECODE:
-      return "音频解码失败";
-    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-      return "音频源不可用或格式不支持";
-    default:
-      return "播放出错";
   }
 }
 

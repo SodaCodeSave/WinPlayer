@@ -7,6 +7,7 @@ import { useSettingsStore, DEFAULT_SOURCE_SEARCH_FORMAT, type ThemePreference } 
 import { usePluginsStore, OFFICIAL_MARKET_SOURCE } from "@/stores/plugins";
 import { toast } from "@/services/toast";
 import { clearDataCache, dataCacheSize } from "@/services/cache";
+import { EQ_FREQS, EQ_PRESETS, formatEqFreq } from "@/constants/eqPresets";
 import type { MarketSource, PluginCapability } from "@/types/plugin";
 import { useIsWindows } from "@/composables/useIsMobile";
 
@@ -234,6 +235,41 @@ function onFormatChange(value: unknown): void {
   void settings.setSourceSearchFormat(String(value ?? ""));
 }
 
+/* ------------------------------ 音效（均衡器） ------------------------------ */
+
+const EQ_CUSTOM_LABEL = "自定义";
+
+/** 预设下拉框选项：内置预设 + 「自定义」（仅作手动状态的展示项） */
+const eqPresetLabels = [...EQ_PRESETS.map((preset) => preset.name), EQ_CUSTOM_LABEL];
+
+const eqPresetIndex = computed(() => {
+  const index = EQ_PRESETS.findIndex((preset) => preset.id === settings.eqPreset);
+  return index >= 0 ? index : eqPresetLabels.length - 1;
+});
+
+function onEqToggle(event: { IsOn: boolean }): void {
+  void settings.setEqEnabled(Boolean(event?.IsOn));
+}
+
+function onEqPresetChange(_sender: unknown, payload?: { AddedItems?: unknown[] }): void {
+  const label = String(payload?.AddedItems?.[0] ?? "");
+  if (label === EQ_CUSTOM_LABEL) return; // 自定义由手动拖动滑杆产生
+  const preset = EQ_PRESETS.find((entry) => entry.name === label);
+  if (preset && preset.id !== settings.eqPreset) void settings.setEqPreset(preset.id);
+}
+
+function onEqSliderInput(index: number, event: Event): void {
+  const value = Number((event.target as HTMLInputElement).value);
+  const gains = [...settings.eqGains];
+  gains[index] = value;
+  void settings.setEqGains(gains);
+}
+
+function formatGain(gain: number | undefined): string {
+  const value = gain ?? 0;
+  return `${value > 0 ? "+" : ""}${value}dB`;
+}
+
 </script>
 
 <template>
@@ -290,6 +326,56 @@ function onFormatChange(value: unknown): void {
           @update:Text="onFormatChange"
         />
       </div>
+    </section>
+
+    <!-- 音效（均衡器） -->
+    <section class="settings-section">
+      <h2 class="settings-section-title">音效</h2>
+      <div class="settings-card">
+        <div class="card-content">
+          <div class="card-header">均衡器</div>
+          <div class="card-description">
+            10 段均衡器（31Hz ~ 16kHz），播放时实时调整音色；关闭后输出原声
+          </div>
+        </div>
+        <ToggleSwitch :IsOn="settings.eqEnabled" @Toggled="onEqToggle" />
+      </div>
+
+      <template v-if="settings.eqEnabled">
+        <div class="settings-card">
+          <div class="card-content">
+            <div class="card-header">预设</div>
+            <div class="card-description">快速套用常见音色；手动拖动滑杆后会自动变为「自定义」</div>
+          </div>
+          <ComboBox
+            class="card-control"
+            :ItemsSource="eqPresetLabels"
+            :SelectedIndex="eqPresetIndex"
+            @SelectionChanged="onEqPresetChange"
+          />
+        </div>
+
+        <div class="settings-card column">
+          <div class="eq-sliders-row">
+            <div v-for="(freq, index) in EQ_FREQS" :key="freq" class="eq-band">
+              <span class="eq-gain">{{ formatGain(settings.eqGains[index]) }}</span>
+              <input
+                class="eq-slider"
+                type="range"
+                min="-12"
+                max="12"
+                step="1"
+                :value="settings.eqGains[index] ?? 0"
+                @input="onEqSliderInput(index, $event)"
+              />
+              <span class="eq-freq">{{ formatEqFreq(freq) }}</span>
+            </div>
+          </div>
+          <div class="eq-actions">
+            <button class="wp-standard-button small" @click="settings.resetEq()">重置</button>
+          </div>
+        </div>
+      </template>
     </section>
 
     <!-- 系统集成（SMTC 仅 Windows 提供） -->
@@ -487,6 +573,51 @@ function onFormatChange(value: unknown): void {
 
 .format-input {
   width: 100%;
+}
+
+/* 均衡器：10 段竖向滑杆 */
+.eq-sliders-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  width: 100%;
+  overflow-x: auto;
+  padding: var(--space-sm) 0;
+}
+
+.eq-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 40px;
+}
+
+.eq-gain {
+  font-size: 11px;
+  color: var(--wp-text-secondary);
+  min-height: 14px;
+}
+
+.eq-slider {
+  width: 24px;
+  height: 120px;
+  margin: 0;
+  -webkit-appearance: slider-vertical; /* 旧 Chromium 回退 */
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  accent-color: var(--wp-accent);
+}
+
+.eq-freq {
+  font-size: 11px;
+  color: var(--wp-text-tertiary);
+}
+
+.eq-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .mirror-edit {

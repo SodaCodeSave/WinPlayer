@@ -3,6 +3,13 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { getSetting, setSetting } from "@/services/db";
+import { getAudioEngine } from "@/services/audio";
+import {
+  EQ_CUSTOM_PRESET_ID,
+  EQ_PRESETS,
+  FLAT_GAINS,
+  findEqPreset,
+} from "@/constants/eqPresets";
 import type { MarketSource } from "@/types/plugin";
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -30,6 +37,12 @@ export const useSettingsStore = defineStore("settings", () => {
   const avatarSourceId = ref<SourcePreference>("");
   /** 播放源/歌词源共用的搜索关键词格式 */
   const sourceSearchFormat = ref(DEFAULT_SOURCE_SEARCH_FORMAT);
+  /** 均衡器开关 */
+  const eqEnabled = ref(false);
+  /** 均衡器预设 ID（手动调整滑杆后为 custom） */
+  const eqPreset = ref("flat");
+  /** 均衡器 10 段增益（dB） */
+  const eqGains = ref<number[]>([...FLAT_GAINS]);
   const loaded = ref(false);
 
   /** 系统配色查询：winuionweb 的暗色控件变量只认 html 上的 theme-dark 类，
@@ -66,7 +79,12 @@ export const useSettingsStore = defineStore("settings", () => {
       "settings.sourceSearchFormat",
       DEFAULT_SOURCE_SEARCH_FORMAT,
     );
+    eqEnabled.value = await getSetting<boolean>("settings.eqEnabled", false);
+    eqPreset.value = await getSetting<string>("settings.eqPreset", "flat");
+    eqGains.value = await getSetting<number[]>("settings.eqGains", [...FLAT_GAINS]);
     applyTheme();
+    // 启动时把均衡器配置应用到原生引擎
+    applyEq();
     loaded.value = true;
   }
 
@@ -103,6 +121,52 @@ export const useSettingsStore = defineStore("settings", () => {
     await setSetting("settings.sourceSearchFormat", value);
   }
 
+  /* ------------------------------ 均衡器 ------------------------------ */
+
+  function applyEq(): void {
+    getAudioEngine().setEq(eqEnabled.value, eqGains.value);
+  }
+
+  async function setEqEnabled(value: boolean): Promise<void> {
+    eqEnabled.value = value;
+    applyEq();
+    await setSetting("settings.eqEnabled", value);
+  }
+
+  /** 切换预设：自动套用预设增益；custom 仅作为 UI 标识传入 */
+  async function setEqPreset(id: string): Promise<void> {
+    eqPreset.value = id;
+    const preset = findEqPreset(id);
+    if (preset) {
+      eqGains.value = [...preset.gains];
+      applyEq();
+      await setSetting("settings.eqGains", eqGains.value);
+    }
+    await setSetting("settings.eqPreset", id);
+  }
+
+  /** 滑杆拖动期间的高频写入防抖计时器 */
+  let eqGainsPersistTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** 手动调整某段增益：预设转为「自定义」（增益持久化防抖，拖动结束才落库） */
+  async function setEqGains(gains: number[]): Promise<void> {
+    eqGains.value = gains;
+    if (eqPreset.value !== EQ_CUSTOM_PRESET_ID) {
+      eqPreset.value = EQ_CUSTOM_PRESET_ID;
+      await setSetting("settings.eqPreset", EQ_CUSTOM_PRESET_ID);
+    }
+    applyEq();
+    clearTimeout(eqGainsPersistTimer);
+    eqGainsPersistTimer = setTimeout(() => {
+      void setSetting("settings.eqGains", gains);
+    }, 400);
+  }
+
+  /** 重置为平直增益（预设回到「平坦」） */
+  async function resetEq(): Promise<void> {
+    await setEqPreset(EQ_PRESETS[0].id);
+  }
+
   return {
     theme,
     marketSources,
@@ -113,6 +177,9 @@ export const useSettingsStore = defineStore("settings", () => {
     lyricsSourceId,
     avatarSourceId,
     sourceSearchFormat,
+    eqEnabled,
+    eqPreset,
+    eqGains,
     loaded,
     load,
     setTheme,
@@ -121,5 +188,9 @@ export const useSettingsStore = defineStore("settings", () => {
     setSmtcEnabled,
     setSourcePreference,
     setSourceSearchFormat,
+    setEqEnabled,
+    setEqPreset,
+    setEqGains,
+    resetEq,
   };
 });

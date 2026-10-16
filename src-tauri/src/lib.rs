@@ -1,4 +1,5 @@
 mod commands;
+mod player;
 mod smtc;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -24,6 +25,8 @@ pub fn run() {
                     .add_migrations("sqlite:winplayer.db", db_migrations())
                     .build(),
             )
+            // invoke_handler 只能调用一次（再次调用会整体替换命令表），
+            // 所有命令必须集中在此列出
             .invoke_handler(tauri::generate_handler![
                 commands::cache::cache_stats,
                 commands::cache::cache_clear,
@@ -37,10 +40,19 @@ pub fn run() {
                 commands::plugins::plugin_storage_get,
                 commands::plugins::plugin_storage_set,
                 commands::smtc::smtc_sync,
+                player::player_load,
+                player::player_play,
+                player::player_pause,
+                player::player_stop,
+                player::player_seek,
+                player::player_set_volume,
+                player::player_set_eq,
             ])
             .setup(|app| {
                 // 主窗口此时已创建，可在其上挂接系统媒体传输控件（SMTC）
                 smtc::init(app.handle());
+                // 原生音频播放引擎（命令 + 事件见 src-tauri/src/player/）
+                player::init(app);
                 Ok(())
             }),
     );
