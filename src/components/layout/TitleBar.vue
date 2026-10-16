@@ -6,10 +6,12 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { PersonPicture } from "winuionweb";
 import CachedImage from "@/components/common/CachedImage.vue";
 import { pluginDisplayName, usePluginsStore, type AppAvatar } from "@/stores/plugins";
+import { useSettingsStore } from "@/stores/settings";
 
 const router = useRouter();
 const appWindow = getCurrentWindow();
 const plugins = usePluginsStore();
+const settingsStore = useSettingsStore();
 
 const query = ref("");
 const maximized = ref(false);
@@ -33,11 +35,16 @@ async function loadAvatar() {
   }
 }
 
-/** 插件安装/启停/配置变化后重新取头像（配置变更会重建沙箱） */
+/** 插件安装/启停/配置变化后重新取头像（配置变更会重建沙箱）；头像源设置变化同样刷新 */
 watch(
   () => plugins.records,
   () => void loadAvatar(),
   { deep: true },
+);
+
+watch(
+  () => settingsStore.avatarSourceId,
+  () => void loadAvatar(),
 );
 
 let unlistenResize: UnlistenFn | null = null;

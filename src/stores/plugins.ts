@@ -248,10 +248,10 @@ export const usePluginsStore = defineStore("plugins", () => {
 
   /* ------------------------------ 聚合调用 ------------------------------ */
 
-  /** 聚合搜索：并发调用所有启用且支持搜索的插件 */
+  /** 聚合搜索：并发调用所有启用且支持搜索的插件；配置了歌曲信息源时其结果置顶 */
   async function searchAll(keyword: string): Promise<AggregatedSourceResult<SearchResult>[]> {
     const targets = enabledRecords.value.filter((r) => hasCapability(r, "search"));
-    return Promise.all(
+    const results = await Promise.all(
       targets.map(async (record): Promise<AggregatedSourceResult<SearchResult>> => {
         try {
           const host = await getHost(record.entry.id);
@@ -262,6 +262,7 @@ export const usePluginsStore = defineStore("plugins", () => {
         }
       }),
     );
+    return sortByPreferredSource(results, settingsStore.trackSourceId);
   }
 
   /**
@@ -275,7 +276,7 @@ export const usePluginsStore = defineStore("plugins", () => {
     type: "album" | "artist",
   ): Promise<AggregatedSourceResult<SearchResult>[]> {
     const targets = enabledRecords.value.filter((r) => hasCapability(r, "search"));
-    return Promise.all(
+    const results = await Promise.all(
       targets.map(async (record): Promise<AggregatedSourceResult<SearchResult>> => {
         try {
           const host = await getHost(record.entry.id);
@@ -286,6 +287,7 @@ export const usePluginsStore = defineStore("plugins", () => {
         }
       }),
     );
+    return sortByPreferredSource(results, settingsStore.trackSourceId);
   }
 
   /** 聚合推荐 */
@@ -304,8 +306,41 @@ export const usePluginsStore = defineStore("plugins", () => {
     );
   }
 
-  /** 获取某首歌的播放直链 */
+  /**
+   * 在指定插件里按搜索格式重新定位曲目（播放源/歌词源用）。
+   * 用设置中的「搜索格式」拼接关键词，取该插件搜索结果的第一首；
+   * 插件不可用、搜索失败或无结果时返回 null，由调用方回退原曲目来源。
+   */
+  async function relocateTrack(sourceId: string, track: UnifiedTrack): Promise<UnifiedTrack | null> {
+    const record = records.value.find((r) => r.entry.id === sourceId);
+    if (!record || !record.enabled || !hasCapability(record, "search")) return null;
+    const keyword = formatTrackKeyword(track, settingsStore.sourceSearchFormat);
+    if (!keyword) return null;
+    try {
+      const host = await getHost(sourceId);
+      const result = await host.invoke<SearchResult>("search", { keyword, page: 1 });
+      const song = result?.songs?.[0];
+      return song ? { ...song, sourceId } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 获取某首歌的播放直链。配置了播放源时优先按搜索格式在该源重新搜曲取直链，失败回退原来源 */
   async function getSongUrl(track: UnifiedTrack): Promise<SongUrlResult> {
+    const playSourceId = settingsStore.playSourceId;
+    if (playSourceId && playSourceId !== track.sourceId) {
+      const relocated = await relocateTrack(playSourceId, track);
+      if (relocated) {
+        try {
+          const host = await getHost(playSourceId);
+          const result = await host.invoke<SongUrlResult>("getSongUrl", { id: relocated.id });
+          if (result?.url) return result;
+        } catch {
+          /* 播放源解析失败，回退到曲目自身来源 */
+        }
+      }
+    }
     if (!track.sourceId) throw new Error("歌曲缺少来源信息");
     const host = await getHost(track.sourceId);
     const result = await host.invoke<SongUrlResult>("getSongUrl", { id: track.id });
@@ -313,8 +348,21 @@ export const usePluginsStore = defineStore("plugins", () => {
     return result;
   }
 
-  /** 获取歌词（失败返回 null，不打断播放） */
+  /** 获取歌词（失败返回 null，不打断播放）。配置了歌词源时优先在该源重新搜曲取词，失败回退原来源 */
   async function getLyrics(track: UnifiedTrack): Promise<LyricsResult | null> {
+    const lyricsSourceId = settingsStore.lyricsSourceId;
+    if (lyricsSourceId && lyricsSourceId !== track.sourceId) {
+      const relocated = await relocateTrack(lyricsSourceId, track);
+      if (relocated) {
+        try {
+          const host = await getHost(lyricsSourceId);
+          const result = await host.invoke<LyricsResult>("getLyrics", { id: relocated.id });
+          if (result?.lrc) return result;
+        } catch {
+          /* 歌词源取词失败，回退到曲目自身来源 */
+        }
+      }
+    }
     if (!track.sourceId) return null;
     try {
       const host = await getHost(track.sourceId);
@@ -454,13 +502,17 @@ export const usePluginsStore = defineStore("plugins", () => {
   /**
    * 获取窗口右上角展示的头像。
    *
-   * 按启用插件的声明顺序依次尝试，取第一个返回结果（AvatarResult）的插件；
-   * 未登录/无头像返回 null 的插件视为未提供，继续找下一个。全部失败时返回 null，
-   * 调用方回退到默认头像。
+   * 设置了头像源时优先尝试该插件，随后按启用插件的声明顺序依次尝试其余插件，
+   * 取第一个返回结果（AvatarResult）的插件；未登录/无头像返回 null 的插件视为
+   * 未提供，继续找下一个。全部失败时返回 null，调用方回退到默认头像。
    */
   async function getAvatar(): Promise<AppAvatar | null> {
     const targets = enabledRecords.value.filter((r) => hasCapability(r, "avatar"));
-    for (const record of targets) {
+    const preferred = settingsStore.avatarSourceId;
+    const ordered = preferred
+      ? [...targets.filter((r) => r.entry.id === preferred), ...targets.filter((r) => r.entry.id !== preferred)]
+      : targets;
+    for (const record of ordered) {
       try {
         const host = await getHost(record.entry.id);
         const result = await host.invoke<AvatarResult>("getAvatar", {});
@@ -596,6 +648,36 @@ export const usePluginsStore = defineStore("plugins", () => {
 });
 
 /* --------------------------- 结果归一化辅助 --------------------------- */
+
+/** 把指定来源的结果排到最前（信息源优先），其余保持原顺序（sort 稳定） */
+function sortByPreferredSource<T extends { record: PluginRecord }>(
+  results: T[],
+  preferredSourceId: string,
+): T[] {
+  if (!preferredSourceId) return results;
+  return results.sort(
+    (a, b) =>
+      (a.record.entry.id === preferredSourceId ? 0 : 1) -
+      (b.record.entry.id === preferredSourceId ? 0 : 1),
+  );
+}
+
+/** 变量占位符：歌曲名 / 歌手名（逗号连接） / 专辑名 / 别名 */
+const KEYWORD_VARIABLES: Record<string, (track: UnifiedTrack) => string> = {
+  "{歌曲名}": (track) => track.name ?? "",
+  "{歌手名}": (track) => (track.artists ?? []).join(", "),
+  "{专辑名}": (track) => track.album ?? "",
+  "{别名}": (track) => track.alias ?? "",
+};
+
+/** 按「搜索格式」拼接曲目的搜索关键词，默认「{歌曲名} - {歌手名}」 */
+function formatTrackKeyword(track: UnifiedTrack, format: string): string {
+  let keyword = format?.trim() ? format : "{歌曲名} - {歌手名}";
+  for (const [token, resolve] of Object.entries(KEYWORD_VARIABLES)) {
+    keyword = keyword.split(token).join(resolve(track));
+  }
+  return keyword.trim();
+}
 
 function normalizeSearchResult(result: SearchResult | null, sourceId: string): SearchResult {
   if (!result) return {};
