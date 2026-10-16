@@ -4,7 +4,8 @@
  *
  * 1. 先请求缓存协议地址（磁盘命中秒开，未命中由 Rust 下载压缩后返回）；
  * 2. 失败则回退显示远程原图，同时后台调用 image_cache_prefetch 预取，
- *    保证下次能命中缓存；
+ *    保证下次能命中缓存（以 no-referrer 请求，规避图床防盗链——如 B 站
+ *    封面 CDN 对非 bilibili Referer 直接返回 403）；
  * 3. 远程也失败则不再渲染图片（父组件的占位图标不受影响时可直接忽略）。
  *
  * 传入的 src 为归一化层改写后的缓存协议地址（见 services/imageCache.ts）。
@@ -66,6 +67,7 @@ async function onError(): Promise<void> {
     loading="lazy"
     decoding="async"
     draggable="false"
+    referrerpolicy="no-referrer"
     @error="onError"
   />
 </template>
