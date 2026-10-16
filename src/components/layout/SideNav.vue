@@ -193,7 +193,7 @@ function isActive(name: string): boolean {
             class="nav-item"
             :class="{ active: route.name === 'playlist' && route.params.id === String(playlist.id) }"
           >
-            <span class="wp-icon nav-icon">&#xE855;</span>
+            <span class="wp-icon nav-icon">&#xF4EE;</span>
             <span class="nav-label ellipsis">{{ playlist.name }}</span>
             <span v-if="playlist.trackCount" class="nav-badge">{{ playlist.trackCount }}</span>
           </router-link>
@@ -226,7 +226,7 @@ function isActive(name: string): boolean {
               :class="{ active: isPlatformActive(item) }"
               :title="item.name"
             >
-              <span class="wp-icon nav-icon">&#xE855;</span>
+              <span class="wp-icon nav-icon">&#xF4EE;</span>
               <span class="nav-label ellipsis">{{ item.name }}</span>
             </router-link>
           </li>
@@ -368,8 +368,8 @@ function isActive(name: string): boolean {
   /* 强调胶囊由 .nav-accent 绝对定位并参与滑动（不再使用逐项 ::before，避免瞬移） */
 
 .nav-icon {
-  font-size: 16px;
-  width: 20px;
+  font-size: 18px;
+  width: 22px;
   text-align: center;
   flex: none;
 }

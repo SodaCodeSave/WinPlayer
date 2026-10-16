@@ -201,7 +201,7 @@ onMounted(() => {
             歌手<span v-if="lazyResults.artist" class="tab-count">{{ allArtists.length }}</span>
           </button>
           <button v-if="activeTab === 'song' && allSongs.length" class="tab-action" @click="playAll">
-            <span class="wp-icon">&#xF610;</span>播放全部
+            <span class="wp-icon filled">&#xF610;</span>播放全部
           </button>
         </div>
 

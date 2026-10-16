@@ -219,7 +219,7 @@ async function openDelete() {
         </div>
         <div class="header-actions">
           <button class="wp-accent-button" :disabled="!tracks.length" @click="playAll">
-            <span class="wp-icon">&#xF610;</span>播放全部
+            <span class="wp-icon filled">&#xF610;</span>播放全部
           </button>
           <button class="wp-standard-button" :disabled="!tracks.length" @click="shufflePlay">
             <span class="wp-icon">&#xEF37;</span>随机播放
@@ -251,7 +251,7 @@ async function openDelete() {
 
       <EmptyState
         v-else
-        icon="&#xE855;"
+        icon="&#xF4EE;"
         title="歌单还是空的"
         :description="
           isRemote

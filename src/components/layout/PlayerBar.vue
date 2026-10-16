@@ -34,6 +34,8 @@ const modeIcon = computed(() => {
       return "&#xF610;"; // 顺序播放借用播放图标，避免与循环混淆
   }
 });
+// F610 在 Regular 字重撞码为电源键，顺序播放时需切到 Filled 字重
+const modeIconFilled = computed(() => !["shuffle", "loop-one", "loop-all"].includes(player.mode));
 
 function onSeekInput(value: number): void {
   const v = Number(value);
@@ -108,7 +110,7 @@ async function toggleLikeCurrent() {
           :title="PLAY_MODE_LABEL[player.mode]"
           @click="player.cycleMode"
         >
-          <span class="wp-icon" v-html="modeIcon" />
+          <span class="wp-icon" :class="{ filled: modeIconFilled }" v-html="modeIcon" />
         </button>
         <button class="wp-icon-button" title="上一首" :disabled="!player.queue.length" @click="player.prev">
           <span class="wp-icon filled">&#xF633;</span>
@@ -167,7 +169,7 @@ async function toggleLikeCurrent() {
         title="播放队列"
         @click="player.showQueue = !player.showQueue; player.showLyrics = false"
       >
-        <span class="wp-icon">&#xE855;</span>
+        <span class="wp-icon">&#xF4EE;</span>
       </button>
       <div class="volume-group">
         <button class="wp-icon-button" :title="player.muted ? '取消静音' : '静音'" @click="player.toggleMute">

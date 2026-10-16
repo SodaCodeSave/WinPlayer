@@ -123,7 +123,7 @@ async function pickPlaylist(option: PlaylistOption) {
           :disabled="pickerBusy"
           @click="pickPlaylist(option)"
         >
-          <span class="wp-icon picker-icon">&#xE855;</span>
+          <span class="wp-icon picker-icon">&#xF4EE;</span>
           <span class="picker-name ellipsis">{{ option.name }}</span>
           <span class="picker-meta ellipsis">{{ option.meta }}</span>
         </button>

@@ -38,7 +38,7 @@ function shufflePlay() {
         </div>
         <div class="header-actions">
           <button class="wp-accent-button" @click="playAll">
-            <span class="wp-icon">&#xF610;</span>播放全部
+            <span class="wp-icon filled">&#xF610;</span>播放全部
           </button>
           <button class="wp-standard-button" @click="shufflePlay">
             <span class="wp-icon">&#xEF37;</span>随机播放

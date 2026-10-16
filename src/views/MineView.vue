@@ -181,6 +181,7 @@ function openPlaylistMenu(x: number, y: number, playlist: LocalPlaylist) {
       key: "play",
       label: "播放全部",
       icon: "&#xF610;",
+      filled: true,
       action: () => playPlaylist(playlist),
     },
     {
@@ -267,7 +268,7 @@ function onPlaylistClick(playlist: LocalPlaylist) {
           @touchend="onItemTouchEnd"
           @touchcancel="onItemTouchEnd"
         >
-          <span class="wp-icon playlist-icon">&#xE855;</span>
+          <span class="wp-icon playlist-icon">&#xF4EE;</span>
           <span class="playlist-name ellipsis">{{ playlist.name }}</span>
           <span v-if="playlist.trackCount" class="playlist-badge">{{ playlist.trackCount }}</span>
         </button>
@@ -301,7 +302,7 @@ function onPlaylistClick(playlist: LocalPlaylist) {
               })
             "
           >
-            <span class="wp-icon playlist-icon">&#xE855;</span>
+            <span class="wp-icon playlist-icon">&#xF4EE;</span>
             <span class="playlist-name ellipsis">{{ item.name }}</span>
             <span class="playlist-source">{{ item.sourceName }}</span>
           </button>

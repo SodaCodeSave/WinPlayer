@@ -159,7 +159,7 @@ function shufflePlay() {
           </div>
           <div class="banner-actions">
             <button class="wp-accent-button" :disabled="!hotTracks.length" @click="playAll">
-              <span class="wp-icon">&#xF610;</span>播放热门歌曲
+              <span class="wp-icon filled">&#xF610;</span>播放热门歌曲
             </button>
             <button class="wp-standard-button" :disabled="!hotTracks.length" @click="shufflePlay">
               <span class="wp-icon">&#xEF37;</span>随机播放

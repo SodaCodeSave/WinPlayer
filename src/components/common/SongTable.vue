@@ -118,7 +118,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
     items.push({
       key: "playlist",
       label: "添加到歌单",
-      icon: "&#xE855;",
+      icon: "&#xF4EE;",
       action: () => openPlaylistPicker(track),
     });
   }
@@ -226,7 +226,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
           title="添加到歌单"
           @click="openPlaylistPicker(row.track)"
         >
-          <span class="wp-icon">&#xE855;</span>
+          <span class="wp-icon">&#xF4EE;</span>
         </button>
         <button class="row-action" title="添加到播放队列" @click="addSingle(row.track)">
           <span class="wp-icon">&#xF10A;</span>
