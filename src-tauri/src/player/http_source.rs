@@ -38,6 +38,9 @@ struct Inner {
     watermark: AtomicU64,
     /// 文件总字节数，0 表示未知
     total_len: AtomicU64,
+    /// 服务器不支持 Range（返回 200 全量响应）：全量顺序下载模式，
+    /// seek 仅本地定位，不做窗口重拉
+    no_range: AtomicBool,
     /// 当前会话已下载到文件末尾
     eof: AtomicBool,
     /// 下载会话代号，变更即要求旧下载线程退出
@@ -69,6 +72,7 @@ impl HttpMediaSource {
             offset: AtomicU64::new(0),
             watermark: AtomicU64::new(0),
             total_len: AtomicU64::new(0),
+            no_range: AtomicBool::new(false),
             eof: AtomicBool::new(false),
             session: AtomicU64::new(1),
             error: Mutex::new(None),
@@ -144,6 +148,13 @@ fn download_loop(inner: Arc<Inner>, offset: u64, session: u64) {
         }
         if !status.is_success() {
             return Err(format!("音频源返回 HTTP {status}"));
+        }
+
+        // 服务器忽略 Range 返回 200 全量响应：无法随机访问，退化为
+        // 全量顺序下载模式（与浏览器 <audio> 行为一致）——seek 仅移动
+        // 本地读取位置，由 read 等待下载推进到目标
+        if status.as_u16() == 200 {
+            inner.no_range.store(true, Ordering::Release);
         }
 
         // 解析总长：优先 Content-Range（206），退回 Content-Length
@@ -305,12 +316,16 @@ impl Seek for HttpMediaSource {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek 越界"));
         };
         let clamped = if total > 0 { target.min(total) } else { target };
-        // 窗口外（含向前跳出已缓冲区）触发新下载会话；窗口内纯本地定位
+        // 窗口外处理：no_range 模式（服务器不支持 Range）仅本地定位，
+        // read 会等待下载推进；否则窗口外（含向前跳出已缓冲区）触发新下载会话
         if !self.in_window(clamped) {
-            if total == 0 {
+            if self.inner.no_range.load(Ordering::Acquire) {
+                // 全量下载模式：直接移动读取位置
+            } else if total == 0 {
                 return Err(io::Error::new(io::ErrorKind::Unsupported, "音源长度未知，无法拖动"));
+            } else {
+                self.restart_at(clamped);
             }
-            self.restart_at(clamped);
         }
         self.pos = clamped;
         Ok(clamped)
@@ -319,7 +334,11 @@ impl Seek for HttpMediaSource {
 
 impl MediaSource for HttpMediaSource {
     fn is_seekable(&self) -> bool {
+        // 已知总长可 seek；no_range 全量下载模式即使总长未知也允许
+        // （MP4/FLAC 用 seek 表绝对定位不依赖总长；依赖总长的格式
+        // 会在 seek 时明确报错，不会更糟）
         self.inner.total_len.load(Ordering::Acquire) > 0
+            || self.inner.no_range.load(Ordering::Acquire)
     }
 
     fn byte_len(&self) -> Option<u64> {

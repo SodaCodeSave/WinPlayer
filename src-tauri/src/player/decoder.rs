@@ -205,6 +205,8 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
 
             let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
             buffer.copy_interleaved_ref(decoded);
+            // 均衡器处理（交错样本，逐声道 biquad）
+            engine.eq.process(buffer.samples_mut());
             match push_all(engine, session, &mut ring, &buffer.samples()) {
                 PushOutcome::Superseded => return Ok(SessionOutcome::Superseded),
                 // 首帧期间收到 seek：回到主循环顶部统一应用
@@ -237,6 +239,8 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
         }
         let buffer = sample_buf.as_mut().unwrap();
         buffer.copy_interleaved_ref(decoded);
+        // 均衡器处理（交错样本，逐声道 biquad）
+        engine.eq.process(buffer.samples_mut());
         match push_all(engine, session, &mut ring, buffer.samples()) {
             PushOutcome::Superseded => return Ok(SessionOutcome::Superseded),
             // ring 满阻塞期间收到 seek：样本丢弃，回到主循环顶部应用

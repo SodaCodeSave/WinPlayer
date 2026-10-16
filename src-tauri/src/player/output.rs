@@ -19,11 +19,6 @@ impl RingSource {
     pub fn new(consumer: rtrb::Consumer<f32>, channels: u16, sample_rate: u32) -> Self {
         RingSource { consumer, channels, sample_rate }
     }
-
-    /// 当前可读样本数（0 表示缓冲已空，处于 buffering 状态）
-    pub fn readable(&self) -> usize {
-        self.consumer.slots()
-    }
 }
 
 impl Iterator for RingSource {

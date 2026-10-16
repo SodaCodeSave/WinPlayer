@@ -23,8 +23,8 @@ export interface AudioEngineEvents {
 
 type EventName = keyof AudioEngineEvents;
 
-/** seek 后忽略回跳进度事件的时长（ms）：后端旧数据排空期间仍会上报旧位置 */
-const SEEK_GUARD_MS = 800;
+/** seek 后等待引擎到达目标的最长时长（毫秒），超时恢复常规进度跟随 */
+const SEEK_SETTLE_MS = 30_000;
 
 export class AudioEngine {
   private readonly listeners = new Map<EventName, Set<(...args: never[]) => void>>();
@@ -55,9 +55,15 @@ export class AudioEngine {
       await on("player://progress", (payload) => {
         const p = payload as { currentTime?: number; duration?: number };
         const time = typeof p.currentTime === "number" ? p.currentTime : 0;
-        // seek 后短暂忽略旧位置的进度，避免进度条回跳
-        const inGuard = Date.now() - this.seekAt < SEEK_GUARD_MS;
-        if (inGuard && time < this.seekTarget - 0.5) return;
+        // seek 后忽略旧位置的进度，直到引擎时间到达目标附近（Coarse 对齐
+        // 可能滞后数秒；全量下载模式等待可达数十秒）。兜底 30s 防目标
+        // 不可达时永久卡死。
+        const guardActive =
+          this.seekAt > 0 &&
+          Date.now() - this.seekAt < SEEK_SETTLE_MS &&
+          (time < this.seekTarget - 4 || time > this.seekTarget + 10);
+        if (guardActive) return;
+        this.seekAt = 0; // 已到达目标附近，恢复常规进度跟随
         this._currentTime = time;
         if (typeof p.duration === "number" && p.duration > 0 && p.duration !== this._duration) {
           this._duration = p.duration;

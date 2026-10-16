@@ -48,6 +48,9 @@ export const usePlayerStore = defineStore("player", () => {
 
   engine.on("timeupdate", (time) => {
     currentTime.value = time;
+    // seek 场景：到达目标附近后的首个进度复位加载态（缓冲期间后端
+    // 阻塞在读取/推送，不上报进度，不会误清）
+    loading.value = false;
   });
   engine.on("durationchange", (value) => {
     if (value > 0) duration.value = value;
@@ -170,8 +173,9 @@ export const usePlayerStore = defineStore("player", () => {
 
   function handleEnded(): void {
     if (mode.value === "loop-one") {
-      engine.seek(0);
-      void engine.play();
+      // 原生引擎解码线程 emit ended 后即退出，seek(0) 无法复活会话，
+      // 必须重新走 playAt 完整 load 新会话
+      void playAt(currentIndex.value);
       return;
     }
     if (mode.value === "sequential" && currentIndex.value >= queue.value.length - 1) {
@@ -222,6 +226,9 @@ export const usePlayerStore = defineStore("player", () => {
   function seek(seconds: number): void {
     engine.seek(seconds);
     currentTime.value = seconds;
+    // 引擎需缓冲/重拉才能到达目标（全量下载源可达数十秒），
+    // 显示加载态，首个到达目标附近的 timeupdate 复位
+    loading.value = true;
   }
 
   async function setVolume(value: number): Promise<void> {

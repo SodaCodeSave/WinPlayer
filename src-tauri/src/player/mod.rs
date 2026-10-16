@@ -242,10 +242,6 @@ pub fn init(app: &tauri::App) {
 /* ------------------------------ 供解码线程使用的辅助 ------------------------------ */
 
 impl PlayerEngine {
-    pub(crate) fn app_handle(&self) -> &AppHandle {
-        &self.app
-    }
-
     pub(crate) fn client(&self) -> reqwest::blocking::Client {
         self.client.clone()
     }
