@@ -203,14 +203,16 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import pathlib
-          block = """pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-"""
+          block = "\n".join([
+              "pluginManagement {",
+              "    repositories {",
+              "        google()",
+              "        mavenCentral()",
+              "        gradlePluginPortal()",
+              "    }",
+              "}",
+              "",
+          ])
           root = pathlib.Path("src-tauri/gen/android")
           for name in ("settings.gradle.kts", "buildSrc/settings.gradle.kts"):
               p = root / name
