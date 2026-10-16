@@ -195,6 +195,38 @@ jobs:
         if: hashFiles('src-tauri/gen/android/**') == ''
         run: pnpm tauri android init
 
+      # Tauri 模板的 buildSrc 走默认 Gradle Plugin Portal 解析 kotlin-dsl
+      # 的传递依赖（kotlin-stdlib 等），portal 对最新 kotlin 版本常未同步
+      # 导致 "Could not find org.jetbrains.kotlin:kotlin-stdlib:2.x"；
+      # 注入 pluginManagement 仓库让 Maven Central 兜底
+      - name: Patch Gradle repositories
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          block = """pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+"""
+          root = pathlib.Path("src-tauri/gen/android")
+          for name in ("settings.gradle.kts", "buildSrc/settings.gradle.kts"):
+              p = root / name
+              if p.exists():
+                  s = p.read_text(encoding="utf-8")
+                  if "pluginManagement" not in s:
+                      p.write_text(block + s, encoding="utf-8")
+                      print(f"patched {name}")
+                  else:
+                      print(f"already has pluginManagement: {name}")
+              else:
+                  p.parent.mkdir(parents=True, exist_ok=True)
+                  p.write_text(block, encoding="utf-8")
+                  print(f"created {name}")
+          PYEOF
+
       # 优先使用 Secret 中的固定 debug 密钥（ANDROID_DEBUG_KEYSTORE_BASE64）；
       # 未配置时现场生成并作为 Artifact 上传，下载一次回填为 Secret 后签名即固定
       - name: Import or generate debug keystore
