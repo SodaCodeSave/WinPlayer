@@ -480,7 +480,7 @@ function formatGain(gain: number | undefined): string {
       <div class="settings-card">
         <div class="card-content">
           <div class="card-header">WinPlayer</div>
-          <div class="card-description">版本 1.3.0 · 基于插件的桌面音乐播放器 · MIT License</div>
+          <div class="card-description">版本 1.3.1 · 基于插件的桌面音乐播放器 · MIT License</div>
         </div>
       </div>
 
