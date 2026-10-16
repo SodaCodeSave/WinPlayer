@@ -87,7 +87,10 @@ impl PlayerEngine {
             .unwrap_or_else(|_| reqwest::blocking::Client::new());
         let engine = Arc::new(PlayerEngine {
             app: app.clone(),
-            output: Mutex::new(Output::open().ok()),
+            // 输出设备懒初始化（install_sink 首次调用时打开）：
+            // 启动阶段不触碰平台音频栈——Android 上 cpal/Oboe 初始化链路
+            // 含大量 unwrap，且 release 配置 panic=abort，一旦 panic 即闪退
+            output: Mutex::new(None),
             sink: Mutex::new(None),
             session: AtomicU64::new(0),
             volume: Mutex::new(0.8),
@@ -117,7 +120,14 @@ impl PlayerEngine {
 
     /// 用新音源整体替换 Sink（旧 Sink 先 stop 再丢弃，防止混音器残留）
     fn install_sink(&self, source: output::RingSource) -> Result<(), String> {
-        let output_guard = self.output.lock().unwrap();
+        let output_guard = {
+            let mut guard = self.output.lock().unwrap();
+            if guard.is_none() {
+                // 懒初始化：首次播放才打开音频输出；失败不缓存，下次再试
+                *guard = Output::open().ok();
+            }
+            guard
+        };
         let Some(output) = output_guard.as_ref() else {
             return Err("音频输出设备不可用".to_string());
         };
