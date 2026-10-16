@@ -404,10 +404,10 @@ onUnmounted(() => {
       </button>
       <div class="tab-actions">
         <button class="wp-standard-button small" @click="installFromFile">
-          <span class="wp-icon">&#xE7B8;</span>从本地安装
+          <span class="wp-icon">&#xF42F;</span>从本地安装
         </button>
         <button class="wp-standard-button small" @click="openUrlDialog">
-          <span class="wp-icon">&#xE774;</span>从 URL 安装
+          <span class="wp-icon">&#xF4E5;</span>从 URL 安装
         </button>
       </div>
     </div>
@@ -417,7 +417,7 @@ onUnmounted(() => {
       <div v-if="plugins.loading" class="hint">加载中…</div>
       <EmptyState
         v-else-if="!plugins.records.length"
-        icon="&#xE943;"
+        icon="&#xF137;"
         title="尚未安装任何插件"
         description="插件决定音乐来自哪里。你可以从本地导入 .zip/.json 插件包、通过 URL 安装，或在插件市场中浏览。"
       >
@@ -467,7 +467,7 @@ onUnmounted(() => {
                   :src="loginAvatar(record.entry.id)"
                   alt=""
                 />
-                <span v-else class="wp-icon login-icon">&#xE77B;</span>
+                <span v-else class="wp-icon login-icon">&#xF5BE;</span>
                 <span class="login-name">{{ loginName(record.entry.id) }}</span>
                 <span v-if="statusText(record.entry.id)" class="login-sub">
                   {{ statusText(record.entry.id) }}
@@ -561,7 +561,7 @@ onUnmounted(() => {
     <template v-else>
       <div v-if="!settings.marketSources.length" class="market-empty">
         <EmptyState
-          icon="&#xE721;"
+          icon="&#xF690;"
           title="还没有配置插件市场源"
           description="插件市场是一个 JSON 索引地址列表（由社区维护）。在设置中添加市场源地址后，即可在这里浏览和一键安装插件。"
         />
@@ -569,7 +569,7 @@ onUnmounted(() => {
       <template v-else>
         <div class="market-toolbar">
           <button class="wp-standard-button small" :disabled="marketLoading" @click="loadMarket">
-            <span class="wp-icon">&#xE72C;</span>{{ marketLoading ? "加载中…" : "刷新市场" }}
+            <span class="wp-icon">&#xF13E;</span>{{ marketLoading ? "加载中…" : "刷新市场" }}
           </button>
         </div>
         <div v-if="!marketEntries.length" class="hint">
@@ -596,7 +596,7 @@ onUnmounted(() => {
                 安装
               </button>
               <span v-else class="installed-mark">
-                <span class="wp-icon">&#xE73E;</span>已安装
+                <span class="wp-icon">&#xF299;</span>已安装
               </span>
               <button v-if="entry.homepage" class="wp-standard-button small" @click="openUrl(entry.homepage!)">
                 主页

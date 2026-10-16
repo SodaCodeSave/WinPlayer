@@ -166,13 +166,13 @@ function isActive(name: string): boolean {
       <ul class="nav-list">
         <li>
           <router-link :to="{ name: 'recommend' }" class="nav-item" :class="{ active: isActive('recommend') }">
-            <span class="wp-icon nav-icon">&#xE80F;</span>
+            <span class="wp-icon nav-icon">&#xF481;</span>
             <span class="nav-label">推荐</span>
           </router-link>
         </li>
         <li>
           <router-link :to="{ name: 'liked' }" class="nav-item" :class="{ active: isActive('liked') }">
-            <span class="wp-icon nav-icon">&#xE734;</span>
+            <span class="wp-icon nav-icon">&#xF47A;</span>
             <span class="nav-label">我喜欢的音乐</span>
             <span v-if="library.liked.length" class="nav-badge">{{ library.liked.length }}</span>
           </router-link>
@@ -182,7 +182,7 @@ function isActive(name: string): boolean {
       <div class="nav-section-header">
         <span class="nav-section-title">歌单</span>
         <button class="add-button" title="新建歌单" @click="openCreateDialog">
-          <span class="wp-icon">&#xE710;</span>
+          <span class="wp-icon">&#xF10A;</span>
         </button>
       </div>
 
@@ -193,7 +193,7 @@ function isActive(name: string): boolean {
             class="nav-item"
             :class="{ active: route.name === 'playlist' && route.params.id === String(playlist.id) }"
           >
-            <span class="wp-icon nav-icon">&#xE8FD;</span>
+            <span class="wp-icon nav-icon">&#xE855;</span>
             <span class="nav-label ellipsis">{{ playlist.name }}</span>
             <span v-if="playlist.trackCount" class="nav-badge">{{ playlist.trackCount }}</span>
           </router-link>
@@ -210,7 +210,7 @@ function isActive(name: string): boolean {
             title="同步平台歌单"
             @click="loadPlatformPlaylists"
           >
-            <span class="wp-icon">&#xE72C;</span>
+            <span class="wp-icon">&#xF191;</span>
           </button>
         </div>
 
@@ -226,7 +226,7 @@ function isActive(name: string): boolean {
               :class="{ active: isPlatformActive(item) }"
               :title="item.name"
             >
-              <span class="wp-icon nav-icon">&#xE8FD;</span>
+              <span class="wp-icon nav-icon">&#xE855;</span>
               <span class="nav-label ellipsis">{{ item.name }}</span>
             </router-link>
           </li>
@@ -246,13 +246,13 @@ function isActive(name: string): boolean {
       <ul class="nav-list">
         <li>
           <router-link :to="{ name: 'plugins' }" class="nav-item" :class="{ active: isActive('plugins') }">
-            <span class="wp-icon nav-icon">&#xE943;</span>
+            <span class="wp-icon nav-icon">&#xF137;</span>
             <span class="nav-label">插件管理</span>
           </router-link>
         </li>
         <li>
           <router-link :to="{ name: 'settings' }" class="nav-item" :class="{ active: isActive('settings') }">
-            <span class="wp-icon nav-icon">&#xE713;</span>
+            <span class="wp-icon nav-icon">&#xF6AA;</span>
             <span class="nav-label">设置</span>
           </router-link>
         </li>

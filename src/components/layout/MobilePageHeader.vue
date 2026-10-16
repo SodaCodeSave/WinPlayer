@@ -12,7 +12,7 @@ const isMobile = useIsMobile();
 <template>
   <div v-if="isMobile" class="mobile-page-header">
     <button class="back-button" title="返回" @click="router.back()">
-      <span class="wp-icon">&#xE72B;</span>
+      <span class="wp-icon">&#xF2AB;</span>
     </button>
     <span v-if="title" class="header-title ellipsis">{{ title }}</span>
   </div>

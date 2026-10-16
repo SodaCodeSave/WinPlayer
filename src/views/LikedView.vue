@@ -30,7 +30,7 @@ function shufflePlay() {
     <template v-if="library.liked.length">
       <div class="wp-page-header">
         <div class="header-cover">
-          <span class="wp-icon">&#xE735;</span>
+          <span class="wp-icon filled">&#xF47E;</span>
         </div>
         <div class="header-meta">
           <h1 class="wp-page-title">我喜欢的音乐</h1>
@@ -38,10 +38,10 @@ function shufflePlay() {
         </div>
         <div class="header-actions">
           <button class="wp-accent-button" @click="playAll">
-            <span class="wp-icon">&#xE768;</span>播放全部
+            <span class="wp-icon">&#xF610;</span>播放全部
           </button>
           <button class="wp-standard-button" @click="shufflePlay">
-            <span class="wp-icon">&#xE8B1;</span>随机播放
+            <span class="wp-icon">&#xEF37;</span>随机播放
           </button>
         </div>
       </div>
@@ -55,7 +55,7 @@ function shufflePlay() {
 
     <EmptyState
       v-else
-      icon="&#xE734;"
+      icon="&#xF47A;"
       title="还没有喜欢的音乐"
       description="浏览搜索结果或推荐，点击歌曲行的心形按钮即可收藏。"
     >

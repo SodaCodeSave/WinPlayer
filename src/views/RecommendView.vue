@@ -78,20 +78,20 @@ onMounted(loadWithCache);
     <div class="wp-page-header">
       <h1 class="wp-page-title">推荐</h1>
       <button class="wp-standard-button" :disabled="loading" @click="load">
-        <span class="wp-icon">&#xE72C;</span>刷新
+        <span class="wp-icon">&#xF13E;</span>刷新
       </button>
     </div>
 
     <!-- 移动端搜索入口：点击进入整页搜索（桌面端搜索在标题栏） -->
     <div v-if="isMobile" class="mobile-search" @click="router.push({ name: 'search' })">
-      <span class="wp-icon mobile-search-icon">&#xE721;</span>
+      <span class="wp-icon mobile-search-icon">&#xF690;</span>
       <span class="mobile-search-placeholder">搜索音乐、歌单</span>
     </div>
 
     <!-- 无可用插件 -->
     <EmptyState
       v-if="!plugins.enabledRecords.length"
-      icon="&#xE943;"
+      icon="&#xF137;"
       title="还没有可用的播放源"
       description="WinPlayer 的音乐完全来自插件。前往插件管理安装一个播放源插件，或从市场添加。"
     >
@@ -114,7 +114,7 @@ onMounted(loadWithCache);
 
       <EmptyState
         v-if="!sections.length && !errors.length"
-        icon="&#xE8D6;"
+        icon="&#xE852;"
         title="暂无推荐内容"
         description="已启用的插件没有提供推荐，试试搜索或稍后再来。"
       />
@@ -138,9 +138,9 @@ onMounted(loadWithCache);
           >
             <div class="song-cover">
               <CachedImage v-if="song.cover" :src="song.cover" class="cover-img" />
-              <span v-else class="wp-icon cover-placeholder">&#xE8D6;</span>
+              <span v-else class="wp-icon cover-placeholder">&#xE852;</span>
               <button class="song-play" title="播放" @click="playFromSource(section, index)">
-                <span class="wp-icon">&#xE768;</span>
+                <span class="wp-icon filled">&#xF610;</span>
               </button>
             </div>
             <div class="song-name ellipsis">{{ trackTitle(song) }}</div>

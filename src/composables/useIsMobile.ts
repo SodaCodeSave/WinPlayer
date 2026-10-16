@@ -11,3 +11,8 @@ const isMobileDevice =
 export function useIsMobile(): boolean {
   return isMobileDevice;
 }
+
+/** 是否为 Windows 桌面平台（SMTC 等 Windows 专属能力的判定依据） */
+export function useIsWindows(): boolean {
+  return /windows/i.test(navigator.userAgent);
+}

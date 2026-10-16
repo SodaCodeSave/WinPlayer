@@ -25,13 +25,13 @@ const liked = computed(() => (player.currentTrack ? library.isLiked(player.curre
 const modeIcon = computed(() => {
   switch (player.mode) {
     case "shuffle":
-      return "&#xE8B1;";
+      return "&#xEF37;";
     case "loop-one":
-      return "&#xE8ED;";
+      return "&#xEF34;";
     case "loop-all":
-      return "&#xE8EE;";
+      return "&#xF172;";
     default:
-      return "&#xE768;"; // 顺序播放借用播放图标，避免与循环混淆
+      return "&#xF610;"; // 顺序播放借用播放图标，避免与循环混淆
   }
 });
 
@@ -81,7 +81,7 @@ async function toggleLikeCurrent() {
           :src="player.currentTrack.cover"
           class="cover-img"
         />
-        <span v-else class="wp-icon cover-placeholder">&#xE8D6;</span>
+        <span v-else class="wp-icon cover-placeholder">&#xE852;</span>
       </div>
       <div class="meta">
         <div class="title ellipsis">{{ player.currentTrack ? trackTitle(player.currentTrack) : "未在播放" }}</div>
@@ -96,7 +96,7 @@ async function toggleLikeCurrent() {
         :title="liked ? '取消喜欢' : '添加到我喜欢'"
         @click="toggleLikeCurrent"
       >
-        <span class="wp-icon">{{ liked ? "&#xE735;" : "&#xE734;" }}</span>
+        <span class="wp-icon" :class="{ filled: liked }">{{ liked ? "&#xF47E;" : "&#xF47A;" }}</span>
       </button>
     </div>
 
@@ -111,7 +111,7 @@ async function toggleLikeCurrent() {
           <span class="wp-icon" v-html="modeIcon" />
         </button>
         <button class="wp-icon-button" title="上一首" :disabled="!player.queue.length" @click="player.prev">
-          <span class="wp-icon">&#xE892;</span>
+          <span class="wp-icon filled">&#xF633;</span>
         </button>
         <button
           class="play-button"
@@ -119,11 +119,11 @@ async function toggleLikeCurrent() {
           :disabled="!player.queue.length && !player.currentTrack"
           @click="player.togglePlay"
         >
-          <span v-if="player.loading" class="wp-icon">&#xE897;</span>
-          <span v-else class="wp-icon">{{ player.playing ? "&#xE769;" : "&#xE768;" }}</span>
+          <span v-if="player.loading" class="wp-icon">&#xF709;</span>
+          <span v-else class="wp-icon filled">{{ player.playing ? "&#xF5AC;" : "&#xF610;" }}</span>
         </button>
         <button class="wp-icon-button" title="下一首" :disabled="!player.queue.length" @click="player.next()">
-          <span class="wp-icon">&#xE893;</span>
+          <span class="wp-icon filled">&#xF574;</span>
         </button>
         <button
           class="wp-icon-button"
@@ -132,7 +132,7 @@ async function toggleLikeCurrent() {
           :disabled="!player.currentTrack"
           @click="player.showLyrics = !player.showLyrics; player.showQueue = false"
         >
-          <span class="wp-icon">&#xE8D7;</span>
+          <span class="wp-icon">&#xF801;</span>
         </button>
       </div>
       <div class="seek-row">
@@ -167,11 +167,11 @@ async function toggleLikeCurrent() {
         title="播放队列"
         @click="player.showQueue = !player.showQueue; player.showLyrics = false"
       >
-        <span class="wp-icon">&#xE8FD;</span>
+        <span class="wp-icon">&#xE855;</span>
       </button>
       <div class="volume-group">
         <button class="wp-icon-button" :title="player.muted ? '取消静音' : '静音'" @click="player.toggleMute">
-          <span class="wp-icon">{{ player.muted || player.volume === 0 ? "&#xE74F;" : "&#xE767;" }}</span>
+          <span class="wp-icon">{{ player.muted || player.volume === 0 ? "&#xEB4B;" : "&#xEB43;" }}</span>
         </button>
         <Slider
           class="volume-slider"

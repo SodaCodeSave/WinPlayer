@@ -180,19 +180,19 @@ function openPlaylistMenu(x: number, y: number, playlist: LocalPlaylist) {
     {
       key: "play",
       label: "播放全部",
-      icon: "&#xE768;",
+      icon: "&#xF610;",
       action: () => playPlaylist(playlist),
     },
     {
       key: "rename",
       label: "重命名",
-      icon: "&#xE70F;",
+      icon: "&#xF3DE;",
       action: () => openRenameDialog(playlist),
     },
     {
       key: "delete",
       label: "删除歌单",
-      icon: "&#xE74D;",
+      icon: "&#xF34D;",
       danger: true,
       action: () => openDeleteDialog(playlist),
     },
@@ -242,10 +242,10 @@ function onPlaylistClick(playlist: LocalPlaylist) {
 
     <!-- 我喜欢的音乐 -->
     <button class="liked-entry" @click="router.push({ name: 'liked' })">
-      <span class="wp-icon liked-icon">&#xE734;</span>
+      <span class="wp-icon liked-icon">&#xF47A;</span>
       <span class="liked-label">我喜欢的音乐</span>
       <span v-if="library.liked.length" class="liked-badge">{{ library.liked.length }}</span>
-      <span class="wp-icon liked-chevron">&#xE76C;</span>
+      <span class="wp-icon liked-chevron">&#xF2B1;</span>
     </button>
 
     <!-- 本地歌单 -->
@@ -253,7 +253,7 @@ function onPlaylistClick(playlist: LocalPlaylist) {
       <span class="section-title">歌单</span>
       <span v-if="library.playlists.length" class="section-count">{{ library.playlists.length }}</span>
       <button class="add-button" title="新建歌单" @click="openCreateDialog">
-        <span class="wp-icon">&#xE710;</span>
+        <span class="wp-icon">&#xF10A;</span>
       </button>
     </div>
 
@@ -267,7 +267,7 @@ function onPlaylistClick(playlist: LocalPlaylist) {
           @touchend="onItemTouchEnd"
           @touchcancel="onItemTouchEnd"
         >
-          <span class="wp-icon playlist-icon">&#xE8FD;</span>
+          <span class="wp-icon playlist-icon">&#xE855;</span>
           <span class="playlist-name ellipsis">{{ playlist.name }}</span>
           <span v-if="playlist.trackCount" class="playlist-badge">{{ playlist.trackCount }}</span>
         </button>
@@ -285,7 +285,7 @@ function onPlaylistClick(playlist: LocalPlaylist) {
           title="同步平台歌单"
           @click="loadPlatformPlaylists"
         >
-          <span class="wp-icon">&#xE72C;</span>
+          <span class="wp-icon">&#xF191;</span>
         </button>
       </div>
 
@@ -301,7 +301,7 @@ function onPlaylistClick(playlist: LocalPlaylist) {
               })
             "
           >
-            <span class="wp-icon playlist-icon">&#xE8FD;</span>
+            <span class="wp-icon playlist-icon">&#xE855;</span>
             <span class="playlist-name ellipsis">{{ item.name }}</span>
             <span class="playlist-source">{{ item.sourceName }}</span>
           </button>

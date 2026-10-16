@@ -58,7 +58,7 @@ const progressPercent = computed(() =>
           :src="player.currentTrack.cover"
           class="mini-cover-img"
         />
-        <span v-else class="wp-icon mini-cover-placeholder">&#xE8D6;</span>
+        <span v-else class="wp-icon mini-cover-placeholder">&#xE852;</span>
       </div>
       <div class="mini-meta">
         <div class="mini-title ellipsis">{{ trackTitle(player.currentTrack) }}</div>
@@ -69,15 +69,15 @@ const progressPercent = computed(() =>
         :title="liked ? '取消喜欢' : '添加到我喜欢'"
         @click.stop="toggleLikeCurrent"
       >
-        <span class="wp-icon">{{ liked ? "&#xE735;" : "&#xE734;" }}</span>
+        <span class="wp-icon" :class="{ filled: liked }">{{ liked ? "&#xF47E;" : "&#xF47A;" }}</span>
       </button>
       <button
         class="wp-icon-button mini-action"
         :title="player.playing ? '暂停' : '播放'"
         @click.stop="player.togglePlay"
       >
-        <span v-if="player.loading" class="wp-icon">&#xE897;</span>
-        <span v-else class="wp-icon">{{ player.playing ? "&#xE769;" : "&#xE768;" }}</span>
+        <span v-if="player.loading" class="wp-icon">&#xF709;</span>
+        <span v-else class="wp-icon filled">{{ player.playing ? "&#xF5AC;" : "&#xF610;" }}</span>
       </button>
       <button
         class="wp-icon-button mini-action"
@@ -85,7 +85,7 @@ const progressPercent = computed(() =>
         :disabled="!player.queue.length"
         @click.stop="player.next()"
       >
-        <span class="wp-icon">&#xE893;</span>
+        <span class="wp-icon filled">&#xF574;</span>
       </button>
     </footer>
 
@@ -94,7 +94,7 @@ const progressPercent = computed(() =>
       <div v-if="showFull" class="full-player" @click.self="showFull = false">
         <div class="full-header">
           <button class="wp-icon-button" title="收起" @click="showFull = false">
-            <span class="wp-icon">&#xE72B;</span>
+            <span class="wp-icon">&#xF2AB;</span>
           </button>
           <span class="full-header-title">正在播放</span>
           <span class="full-header-spacer" />
@@ -106,7 +106,7 @@ const progressPercent = computed(() =>
             :src="player.currentTrack.cover"
             class="full-cover-img"
           />
-          <span v-else class="wp-icon full-cover-placeholder">&#xE8D6;</span>
+          <span v-else class="wp-icon full-cover-placeholder">&#xE852;</span>
         </div>
 
         <div class="full-meta">
@@ -140,18 +140,18 @@ const progressPercent = computed(() =>
 
         <div class="full-controls">
           <button class="wp-icon-button" :disabled="!player.queue.length" title="上一首" @click="player.prev">
-            <span class="wp-icon">&#xE892;</span>
+            <span class="wp-icon filled">&#xF633;</span>
           </button>
           <button
             class="full-play-button"
             :title="player.playing ? '暂停' : '播放'"
             @click="player.togglePlay"
           >
-            <span v-if="player.loading" class="wp-icon">&#xE897;</span>
-            <span v-else class="wp-icon">{{ player.playing ? "&#xE769;" : "&#xE768;" }}</span>
+            <span v-if="player.loading" class="wp-icon">&#xF709;</span>
+            <span v-else class="wp-icon filled">{{ player.playing ? "&#xF5AC;" : "&#xF610;" }}</span>
           </button>
           <button class="wp-icon-button" :disabled="!player.queue.length" title="下一首" @click="player.next()">
-            <span class="wp-icon">&#xE893;</span>
+            <span class="wp-icon filled">&#xF574;</span>
           </button>
         </div>
       </div>

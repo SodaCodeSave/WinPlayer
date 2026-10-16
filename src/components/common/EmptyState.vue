@@ -9,7 +9,7 @@ defineProps<{
 
 <template>
   <div class="empty-state">
-    <span class="wp-icon empty-icon" v-html="icon || '&#xE8D6;'" />
+    <span class="wp-icon empty-icon" v-html="icon || '&#xE852;'" />
     <div class="empty-title">{{ title }}</div>
     <div v-if="description" class="empty-description">{{ description }}</div>
     <div class="empty-actions">

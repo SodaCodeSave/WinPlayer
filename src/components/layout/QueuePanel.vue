@@ -26,26 +26,27 @@ function openItemMenu(track: UnifiedTrack, uid: string, event: MouseEvent) {
     items.push({
       key: "playlist",
       label: "添加到歌单",
-      icon: "&#xE8FD;",
+      icon: "&#xF4EE;",
       action: () => openPlaylistPicker(track),
     });
   }
   items.push({
     key: "like",
     label: liked ? "取消喜欢" : "添加到我喜欢",
-    icon: liked ? "&#xE735;" : "&#xE734;",
+    icon: liked ? "&#xF47E;" : "&#xF47A;",
+    filled: liked,
     action: () => library.toggleLike(track),
   });
   items.push({
     key: "queue",
     label: "添加到播放队列",
-    icon: "&#xE710;",
+    icon: "&#xF10A;",
     action: () => player.addToQueue([track]),
   });
   items.push({
     key: "remove",
     label: "移除",
-    icon: "&#xE74D;",
+    icon: "&#xF34D;",
     danger: true,
     action: () => player.removeFromQueue(uid),
   });
@@ -76,7 +77,7 @@ function openItemMenu(track: UnifiedTrack, uid: string, event: MouseEvent) {
             @contextmenu="openItemMenu(item.track, item.uid, $event)"
           >
             <div class="queue-index">
-              <span v-if="index === player.currentIndex" class="wp-icon playing-indicator">&#xE769;</span>
+              <span v-if="index === player.currentIndex" class="wp-icon filled playing-indicator">&#xE855;</span>
               <span v-else>{{ index + 1 }}</span>
             </div>
             <div class="queue-meta">
@@ -85,7 +86,7 @@ function openItemMenu(track: UnifiedTrack, uid: string, event: MouseEvent) {
             </div>
             <span class="queue-duration">{{ formatDuration(item.track.duration) }}</span>
             <button class="queue-remove" title="移除" @click.stop="player.removeFromQueue(item.uid)">
-              <span class="wp-icon">&#xE711;</span>
+              <span class="wp-icon">&#xF36A;</span>
             </button>
           </li>
         </ul>

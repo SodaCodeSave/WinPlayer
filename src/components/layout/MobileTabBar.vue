@@ -12,10 +12,10 @@ interface TabItem {
 }
 
 const tabs: TabItem[] = [
-  { name: "recommend", routeName: "recommend", icon: "&#xE80F;", label: "首页" },
-  { name: "mine", routeName: "mine", icon: "&#xE77B;", label: "我的" },
-  { name: "plugins", routeName: "plugins", icon: "&#xE943;", label: "插件" },
-  { name: "settings", routeName: "settings", icon: "&#xE713;", label: "设置" },
+  { name: "recommend", routeName: "recommend", icon: "&#xF481;", label: "首页" },
+  { name: "mine", routeName: "mine", icon: "&#xF5BE;", label: "我的" },
+  { name: "plugins", routeName: "plugins", icon: "&#xF137;", label: "插件" },
+  { name: "settings", routeName: "settings", icon: "&#xF6AA;", label: "设置" },
 ];
 </script>
 

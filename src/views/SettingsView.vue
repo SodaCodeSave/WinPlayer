@@ -7,8 +7,11 @@ import { useSettingsStore, type ThemePreference } from "@/stores/settings";
 import { toast } from "@/services/toast";
 import { clearDataCache, dataCacheSize } from "@/services/cache";
 import type { MarketSource } from "@/types/plugin";
+import { useIsWindows } from "@/composables/useIsMobile";
 
 const settings = useSettingsStore();
+// SMTC 是 Windows 专属能力，其他平台隐藏该设置项
+const isWindows = useIsWindows();
 
 const newSourceName = ref("");
 const newSourceUrl = ref("");
@@ -143,8 +146,8 @@ onMounted(refreshCacheStats);
       </div>
     </section>
 
-    <!-- 系统集成 -->
-    <section class="settings-section">
+    <!-- 系统集成（SMTC 仅 Windows 提供） -->
+    <section v-if="isWindows" class="settings-section">
       <h2 class="settings-section-title">系统集成</h2>
       <div class="settings-card">
         <div class="card-content">

@@ -118,27 +118,28 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
     items.push({
       key: "playlist",
       label: "添加到歌单",
-      icon: "&#xE8FD;",
+      icon: "&#xE855;",
       action: () => openPlaylistPicker(track),
     });
   }
   items.push({
     key: "like",
     label: liked ? "取消喜欢" : "添加到我喜欢",
-    icon: liked ? "&#xE735;" : "&#xE734;",
+    icon: liked ? "&#xF47E;" : "&#xF47A;",
+    filled: liked,
     action: () => library.toggleLike(track),
   });
   items.push({
     key: "queue",
     label: "添加到播放队列",
-    icon: "&#xE710;",
+    icon: "&#xF10A;",
     action: () => addSingle(track),
   });
   if (props.removable) {
     items.push({
       key: "remove",
       label: "移除",
-      icon: "&#xE74D;",
+      icon: "&#xF34D;",
       danger: true,
       action: () => emit("remove", track),
     });
@@ -170,9 +171,9 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       @contextmenu="openRowMenu(row.track, $event)"
     >
       <span class="col-index">
-        <span v-if="row.playing" class="wp-icon index-playing">&#xE769;</span>
+        <span v-if="row.playing" class="wp-icon filled index-playing">&#xF5AC;</span>
         <span v-else class="index-number">{{ index + 1 }}</span>
-        <span class="index-hover wp-icon" @click="playRow(index)">&#xE768;</span>
+        <span class="index-hover wp-icon filled" @click="playRow(index)">&#xF610;</span>
       </span>
       <span class="col-title">
         <CachedImage v-if="row.track.cover" :src="row.track.cover" class="row-cover" />
@@ -217,7 +218,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
           :title="row.liked ? '取消喜欢' : '添加到我喜欢'"
           @click="toggleLike(row.track)"
         >
-          <span class="wp-icon">{{ row.liked ? "&#xE735;" : "&#xE734;" }}</span>
+          <span class="wp-icon" :class="{ filled: row.liked }">{{ row.liked ? "&#xF47E;" : "&#xF47A;" }}</span>
         </button>
         <button
           v-if="canAddToPlaylist"
@@ -225,10 +226,10 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
           title="添加到歌单"
           @click="openPlaylistPicker(row.track)"
         >
-          <span class="wp-icon">&#xE8FD;</span>
+          <span class="wp-icon">&#xE855;</span>
         </button>
         <button class="row-action" title="添加到播放队列" @click="addSingle(row.track)">
-          <span class="wp-icon">&#xE710;</span>
+          <span class="wp-icon">&#xF10A;</span>
         </button>
         <button
           v-if="removable"
@@ -236,7 +237,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
           title="移除"
           @click="emit('remove', row.track)"
         >
-          <span class="wp-icon">&#xE74D;</span>
+          <span class="wp-icon">&#xF34D;</span>
         </button>
       </span>
       <span class="col-duration">{{ formatDuration(row.track.duration) }}</span>

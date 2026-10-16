@@ -5,8 +5,10 @@ import { reactive } from "vue";
 export interface ContextMenuItem {
   key: string;
   label: string;
-  /** Segoe MDL2 图标实体，如 "&#xE8FD;" */
+  /** Fluent Icons 码点实体，如 "&#xF4A4;" */
   icon?: string;
+  /** 使用 Filled 填充字重的字形（播放/暂停/红心等） */
+  filled?: boolean;
   danger?: boolean;
   disabled?: boolean;
   action: () => void | Promise<unknown>;

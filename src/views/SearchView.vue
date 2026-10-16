@@ -142,7 +142,7 @@ onMounted(() => {
     <div class="wp-page-header search-header">
       <h1 class="wp-page-title">搜索</h1>
       <div class="search-field">
-        <span class="wp-icon search-icon">&#xE721;</span>
+        <span class="wp-icon search-icon">&#xF690;</span>
         <input
           v-model="keyword"
           class="search-input"
@@ -156,7 +156,7 @@ onMounted(() => {
 
     <EmptyState
       v-if="!plugins.enabledRecords.length"
-      icon="&#xE943;"
+      icon="&#xF137;"
       title="没有可用的搜索来源"
       description="聚合搜索会同时检索所有启用了搜索能力的插件，请先在插件管理中安装并启用插件。"
     >
@@ -201,7 +201,7 @@ onMounted(() => {
             歌手<span v-if="lazyResults.artist" class="tab-count">{{ allArtists.length }}</span>
           </button>
           <button v-if="activeTab === 'song' && allSongs.length" class="tab-action" @click="playAll">
-            <span class="wp-icon">&#xE768;</span>播放全部
+            <span class="wp-icon">&#xF610;</span>播放全部
           </button>
         </div>
 

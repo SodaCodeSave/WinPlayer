@@ -145,7 +145,7 @@ function shufflePlay() {
         <div class="banner-content">
           <div class="banner-avatar-wrap">
             <CachedImage v-if="artist.avatar" :src="artist.avatar" class="banner-avatar" />
-            <span v-else class="wp-icon banner-avatar-placeholder">&#xE77B;</span>
+            <span v-else class="wp-icon banner-avatar-placeholder">&#xF5BE;</span>
           </div>
           <div class="banner-meta">
             <h1 class="banner-title">{{ artist.name }}</h1>
@@ -159,10 +159,10 @@ function shufflePlay() {
           </div>
           <div class="banner-actions">
             <button class="wp-accent-button" :disabled="!hotTracks.length" @click="playAll">
-              <span class="wp-icon">&#xE768;</span>播放热门歌曲
+              <span class="wp-icon">&#xF610;</span>播放热门歌曲
             </button>
             <button class="wp-standard-button" :disabled="!hotTracks.length" @click="shufflePlay">
-              <span class="wp-icon">&#xE8B1;</span>随机播放
+              <span class="wp-icon">&#xEF37;</span>随机播放
             </button>
           </div>
         </div>
@@ -173,7 +173,7 @@ function shufflePlay() {
         <span class="loading-text">正在加载歌手…</span>
       </div>
 
-      <EmptyState v-else-if="loadError" icon="&#xE7BA;" title="歌手页加载失败" :description="loadError">
+      <EmptyState v-else-if="loadError" icon="&#xF3F2;" title="歌手页加载失败" :description="loadError">
         <button class="wp-standard-button" @click="router.back()">返回</button>
       </EmptyState>
 

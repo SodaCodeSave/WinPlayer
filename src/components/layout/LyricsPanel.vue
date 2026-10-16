@@ -27,7 +27,7 @@ watch(
       <div class="panel-header">
         <span class="panel-title">歌词</span>
         <button class="panel-close" title="关闭" @click="player.showLyrics = false">
-          <span class="wp-icon">&#xE711;</span>
+          <span class="wp-icon">&#xF36A;</span>
         </button>
       </div>
 

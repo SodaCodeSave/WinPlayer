@@ -98,7 +98,12 @@ onUnmounted(() => {
           :disabled="item.disabled"
           @click="activate(item)"
         >
-          <span v-if="item.icon" class="wp-icon ctx-icon" v-html="item.icon"></span>
+          <span
+            v-if="item.icon"
+            class="wp-icon ctx-icon"
+            :class="{ filled: item.filled }"
+            v-html="item.icon"
+          ></span>
           <span class="ctx-label">{{ item.label }}</span>
         </button>
       </div>

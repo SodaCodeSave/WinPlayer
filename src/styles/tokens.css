@@ -7,7 +7,7 @@
   /* 字体 */
   --font-family-display: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui,
     "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  --font-family-icon: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  --font-family-icon: "Fluent Icons", "Segoe Fluent Icons", "Segoe MDL2 Assets";
 
   /* 间距 */
   --space-xs: 2px;

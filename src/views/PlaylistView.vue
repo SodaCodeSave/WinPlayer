@@ -195,7 +195,7 @@ async function openDelete() {
       <div class="wp-page-header">
         <div class="header-cover">
           <CachedImage v-if="header.cover" :src="header.cover" class="cover-img" />
-          <span v-else class="wp-icon">&#xE8FD;</span>
+          <span v-else class="wp-icon">&#xE852;</span>
         </div>
         <div class="header-meta">
           <h1 class="wp-page-title">{{ header.name }}</h1>
@@ -206,10 +206,10 @@ async function openDelete() {
           <div class="header-sub-actions">
             <template v-if="!isRemote">
               <button class="wp-standard-button small" @click="openRename">
-                <span class="wp-icon">&#xE70F;</span>重命名
+                <span class="wp-icon">&#xF3DE;</span>重命名
               </button>
               <button class="wp-standard-button small danger" @click="openDelete">
-                <span class="wp-icon">&#xE74D;</span>删除歌单
+                <span class="wp-icon">&#xF34D;</span>删除歌单
               </button>
             </template>
             <span v-else class="source-badge">
@@ -219,10 +219,10 @@ async function openDelete() {
         </div>
         <div class="header-actions">
           <button class="wp-accent-button" :disabled="!tracks.length" @click="playAll">
-            <span class="wp-icon">&#xE768;</span>播放全部
+            <span class="wp-icon">&#xF610;</span>播放全部
           </button>
           <button class="wp-standard-button" :disabled="!tracks.length" @click="shufflePlay">
-            <span class="wp-icon">&#xE8B1;</span>随机播放
+            <span class="wp-icon">&#xEF37;</span>随机播放
           </button>
         </div>
       </div>
@@ -234,7 +234,7 @@ async function openDelete() {
 
       <EmptyState
         v-else-if="loadError"
-        icon="&#xE7BA;"
+        icon="&#xF3F2;"
         title="歌单加载失败"
         :description="loadError"
       >
@@ -251,7 +251,7 @@ async function openDelete() {
 
       <EmptyState
         v-else
-        icon="&#xE8FD;"
+        icon="&#xE855;"
         title="歌单还是空的"
         :description="
           isRemote

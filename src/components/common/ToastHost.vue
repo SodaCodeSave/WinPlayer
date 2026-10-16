@@ -9,7 +9,7 @@ const items = useToasts();
     <transition-group name="toast">
       <div v-for="item in items" :key="item.id" class="toast-item" :class="item.type">
         <span class="wp-icon toast-icon">
-          {{ item.type === "error" ? "&#xE730;" : item.type === "success" ? "&#xE73E;" : "&#xE946;" }}
+          {{ item.type === "error" ? "&#xF3F2;" : item.type === "success" ? "&#xF299;" : "&#xF4A4;" }}
         </span>
         <span class="toast-message">{{ item.message }}</span>
       </div>

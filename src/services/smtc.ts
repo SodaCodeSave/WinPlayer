@@ -56,6 +56,9 @@ export interface SmtcPlayer {
 /** 非 Tauri 环境（如浏览器里跑 `pnpm dev`）直接降级，不产生报错噪声 */
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** SMTC 是 Windows 专属能力，其他平台（Android/iOS/macOS/Linux）整体短路 */
+const onWindows = typeof navigator !== "undefined" && /windows/i.test(navigator.userAgent);
+
 let player: SmtcPlayer | null = null;
 let enabled = false;
 let started = false;
@@ -175,7 +178,7 @@ function handleButton(action: string): void {
 
 /** 启动桥接：监听播放器状态并注册系统按钮回调（应用启动时调用一次） */
 export function initSmtc(target: SmtcPlayer): void {
-  if (started || !inTauri) return;
+  if (started || !inTauri || !onWindows) return;
   started = true;
   player = target;
 
@@ -189,6 +192,7 @@ export function initSmtc(target: SmtcPlayer): void {
 
 /** 开关系统媒体控件（设置项） */
 export function setSmtcEnabled(value: boolean): void {
+  if (!onWindows) return;
   const changed = enabled !== value;
   enabled = value;
   if (!started || !inTauri || !changed) return;

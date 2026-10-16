@@ -1,5 +1,22 @@
 /* 全局基础样式 */
 
+/* 图标字体：Fluent UI System Icons（MIT）。文件由 scripts/ensure-icon-fonts.mjs
+   在 predev/prebuild 时自动下载，不入 git 仓库。
+   同族双字重：400 = Regular 轮廓，700 = Filled 填充（.wp-icon.filled）。 */
+@font-face {
+  font-family: "Fluent Icons";
+  src: url("../assets/fonts/FluentSystemIcons-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Fluent Icons";
+  src: url("../assets/fonts/FluentSystemIcons-Filled.ttf") format("truetype");
+  font-weight: 700;
+  font-display: block;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -56,8 +73,15 @@ button {
 .wp-icon {
   font-family: var(--font-family-icon);
   font-style: normal;
+  /* 显式锁 400：避免继承粗体时误切到 Filled 字重字体 */
+  font-weight: 400;
   line-height: 1;
   display: inline-block;
+}
+
+/* 填充变体（播放/暂停/上一首/下一首/红心等）：700 命中 Filled 字重的 @font-face */
+.wp-icon.filled {
+  font-weight: 700;
 }
 
 .wp-page {

@@ -83,7 +83,7 @@ function submitSearch() {
 
     <div class="titlebar-center">
       <div class="search-box">
-        <span class="wp-icon search-icon">&#xE721;</span>
+        <span class="wp-icon search-icon">&#xF690;</span>
         <input
           v-model="query"
           class="search-input"
@@ -104,13 +104,13 @@ function submitSearch() {
 
       <div class="caption-buttons">
         <button class="caption-button" title="最小化" @click="appWindow.minimize()">
-          <span class="wp-icon">&#xE921;</span>
+          <span class="wp-icon">&#xEBCF;</span>
         </button>
         <button class="caption-button" :title="maximized ? '还原' : '最大化'" @click="toggleMaximize">
-          <span class="wp-icon">{{ maximized ? "&#xE923;" : "&#xE922;" }}</span>
+          <span class="wp-icon">{{ maximized ? "&#xEB95;" : "&#xF533;" }}</span>
         </button>
         <button class="caption-button close" title="关闭" @click="appWindow.close()">
-          <span class="wp-icon">&#xE8BB;</span>
+          <span class="wp-icon">&#xF368;</span>
         </button>
       </div>
     </div>

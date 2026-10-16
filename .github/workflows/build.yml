@@ -20,30 +20,54 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: nsis,msi
+            os: windows
+            arch: x64
           # Windows ARM64：NSIS（WiX 暂不支持 arm64 的 msi）
           - platform: windows-latest
             target: aarch64-pc-windows-msvc
             bundles: nsis
+            os: windows
+            arch: arm64
           # macOS Apple Silicon
           - platform: macos-latest
             target: aarch64-apple-darwin
             bundles: dmg
+            os: macos
+            arch: arm64
           # macOS Intel
           - platform: macos-latest
             target: x86_64-apple-darwin
             bundles: dmg
+            os: macos
+            arch: x64
           # Linux x64（用 22.04 以兼容较旧 glibc）
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: deb,rpm,appimage
+            os: linux
+            arch: x64
           # Linux ARM64（ubuntu-24.04-arm 免费 runner，仅公共仓库可用；私有仓库请改用交叉编译）
           - platform: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             bundles: deb,rpm,appimage
+            os: linux
+            arch: arm64
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      # 版本号：tag 构建取 tag（去 v 前缀），手动构建回退到 tauri.conf.json
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -80,24 +104,59 @@ jobs:
       - name: Build desktop app
         run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
+      # 重命名为 WinPlayer-{版本}-{平台}-{架构}[-类型].{扩展名}
+      - name: Rename artifacts
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p dist-renamed
+          base="src-tauri/target/${{ matrix.target }}/release/bundle"
+          copy() {
+            for f in "$@"; do
+              [ -e "$f" ] || continue
+              ext="${f##*.}"
+              # .exe 加 -setup 类型后缀，避免与同平台其他包混淆
+              if [ "$ext" = "exe" ]; then
+                cp "$f" "dist-renamed/WinPlayer-$VERSION-$OS-$ARCH-setup.exe"
+              else
+                cp "$f" "dist-renamed/WinPlayer-$VERSION-$OS-$ARCH.$ext"
+              fi
+            done
+          }
+          copy "$base"/nsis/*.exe
+          copy "$base"/msi/*.msi
+          copy "$base"/dmg/*.dmg
+          copy "$base"/deb/*.deb
+          copy "$base"/rpm/*.rpm
+          copy "$base"/appimage/*.AppImage
+          ls -la dist-renamed
+
       # 归一化产物目录并上传
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
-            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+          path: dist-renamed/*
           if-no-files-found: error
 
   android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # 版本号：tag 构建取 tag（去 v 前缀），手动构建回退到 tauri.conf.json
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -207,11 +266,31 @@ jobs:
       - name: Build Android APK
         run: pnpm tauri android build --apk --split-per-abi
 
+      # 重命名为 WinPlayer-{版本}-android-{架构}.apk
+      - name: Rename artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist-renamed
+          shopt -s globstar nullglob
+          for f in src-tauri/gen/android/app/build/outputs/apk/**/*.apk; do
+            name=$(basename "$f")
+            case "$name" in
+              *arm64-v8a*) arch=arm64 ;;
+              *armeabi-v7a*) arch=arm ;;
+              *x86_64*) arch=x86_64 ;;
+              *x86*) arch=x86 ;;
+              *) arch=universal ;;
+            esac
+            cp "$f" "dist-renamed/WinPlayer-$VERSION-android-$arch.apk"
+          done
+          ls -la dist-renamed
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          path: dist-renamed/*
           if-no-files-found: error
 
   release:
