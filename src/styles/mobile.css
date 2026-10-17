@@ -149,3 +149,23 @@
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: var(--space-sm);
 }
+
+/* ------------------------------ 推荐页（首页） ------------------------------ */
+/* 首页没有吸顶返回栏，需要自带顶部内边距；头部保持「标题 + 刷新」同一行，
+   不套用详情页的居中堆叠。 */
+.wp-page.is-mobile.recommend-page {
+  padding-top: var(--space-xl);
+}
+
+.wp-page.is-mobile.recommend-page .wp-page-header {
+  flex-direction: row;
+  align-items: center;
+  text-align: left;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.wp-page.is-mobile.recommend-page .wp-page-title {
+  flex: 1;
+  font-size: 24px;
+}

@@ -10,6 +10,25 @@ export const PLAY_MODE_LABEL: Record<PlayMode, string> = {
   shuffle: "随机播放",
 };
 
+/** 播放模式图标（Fluent Icons 码点实体）；顺序播放借用播放图标，避免与循环混淆 */
+export function playModeIcon(mode: PlayMode): string {
+  switch (mode) {
+    case "shuffle":
+      return "&#xEF37;";
+    case "loop-one":
+      return "&#xEF34;";
+    case "loop-all":
+      return "&#xF172;";
+    default:
+      return "&#xF610;";
+  }
+}
+
+/** F610 在 Regular 字重撞码为电源键，顺序播放时需切到 Filled 字重 */
+export function playModeIconFilled(mode: PlayMode): boolean {
+  return !["shuffle", "loop-one", "loop-all"].includes(mode);
+}
+
 /** 播放队列条目 */
 export interface QueueItem {
   /** 队列内唯一标识（同曲目可重复入队） */

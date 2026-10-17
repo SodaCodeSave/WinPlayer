@@ -15,7 +15,9 @@ import { useRouter } from "vue-router";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
 import { useLibraryStore } from "@/stores/library";
 import { toast } from "@/services/toast";
-import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { openContextMenu, openContextMenuAt, type ContextMenuItem } from "@/services/contextMenu";
+import { useIsMobile } from "@/composables/useIsMobile";
+import { useLongPress } from "@/composables/useLongPress";
 import { copyText } from "@/services/clipboard";
 import CachedImage from "@/components/common/CachedImage.vue";
 import type { UnifiedAlbum, UnifiedArtist, UnifiedPlaylist } from "@/types/plugin";
@@ -30,6 +32,7 @@ const props = defineProps<{
 const router = useRouter();
 const plugins = usePluginsStore();
 const library = useLibraryStore();
+const isMobile = useIsMobile();
 
 const playlist = computed(() => (props.kind === "playlist" ? props.playlist : undefined));
 const album = computed(() => (props.kind === "album" ? props.album : undefined));
@@ -112,10 +115,8 @@ async function copyToLocal(p: UnifiedPlaylist) {
   }
 }
 
-/** 歌单卡片右键菜单：复制到本地 / 复制歌单名 */
-function openMenu(event: MouseEvent) {
-  if (props.kind !== "playlist" || !playlist.value) return;
-  const p = playlist.value;
+/** 歌单卡片菜单项：复制到本地 / 复制歌单名 */
+function menuItems(p: UnifiedPlaylist): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
   if (p.sourceId) {
     items.push({
@@ -131,12 +132,37 @@ function openMenu(event: MouseEvent) {
     icon: "&#xF32C;",
     action: () => copyText(p.name, "歌单名"),
   });
-  openContextMenu(event, items);
+  return items;
+}
+
+/** 歌单卡片右键菜单（桌面端） */
+function openMenu(event: MouseEvent) {
+  if (isMobile || props.kind !== "playlist" || !playlist.value) return;
+  openContextMenu(event, menuItems(playlist.value));
+}
+
+/** 移动端长按：在触摸点弹出歌单菜单（仅歌单卡片有菜单） */
+const longPress = useLongPress();
+
+function onPointerDown(event: PointerEvent) {
+  if (props.kind !== "playlist" || !playlist.value) return;
+  const p = playlist.value;
+  longPress.start(event, (point) => openContextMenuAt(point.x, point.y, menuItems(p)));
 }
 </script>
 
 <template>
-  <button class="media-card" :title="tooltip" @click="open" @contextmenu="openMenu">
+  <button
+    class="media-card"
+    :title="tooltip"
+    @click="open"
+    @contextmenu="openMenu"
+    @pointerdown="onPointerDown"
+    @pointermove="longPress.move"
+    @pointerup="longPress.end"
+    @pointercancel="longPress.end"
+    @pointerleave="longPress.end"
+  >
     <div class="card-cover" :class="{ round: kind === 'artist' }">
       <CachedImage v-if="cover" :src="cover" class="cover-img" />
       <span v-else class="wp-icon cover-placeholder">{{ placeholderIcon }}</span>

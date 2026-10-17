@@ -8,7 +8,8 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
-import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { openContextMenu, openContextMenuAt, type ContextMenuItem } from "@/services/contextMenu";
+import { useLongPress } from "@/composables/useLongPress";
 import CachedImage from "@/components/common/CachedImage.vue";
 import { openPlaylistPicker } from "@/services/playlistPicker";
 import { copyText } from "@/services/clipboard";
@@ -119,8 +120,8 @@ const canAddToPlaylist = computed(
     plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
 );
 
-/** 行右键菜单：添加到歌单 / 添加到我喜欢 / 移除 / 添加到播放队列 / 复制歌曲名 / 复制歌曲别名 */
-function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
+/** 行菜单项：添加到歌单 / 添加到我喜欢 / 移除 / 添加到播放队列 / 复制歌曲名 / 复制歌曲别名 */
+function rowMenuItems(track: UnifiedTrack): ContextMenuItem[] {
   const liked = library.isLiked(track);
   const items: ContextMenuItem[] = [];
   if (canAddToPlaylist.value) {
@@ -168,7 +169,21 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       action: () => copyText(alias, "歌曲别名"),
     });
   }
-  openContextMenu(event, items);
+  return items;
+}
+
+/** 行右键菜单（桌面端）：在鼠标位置弹出 */
+function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
+  // 移动端无鼠标右键，交给长按手势，避免与长按重复弹出
+  if (isMobile) return;
+  openContextMenu(event, rowMenuItems(track));
+}
+
+/** 移动端长按：在触摸点弹出同一套菜单 */
+const longPress = useLongPress();
+
+function onRowPointerDown(event: PointerEvent, track: UnifiedTrack) {
+  longPress.start(event, (point) => openContextMenuAt(point.x, point.y, rowMenuItems(track)));
 }
 </script>
 
@@ -194,6 +209,11 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       @click="onRowClick(index)"
       @dblclick="playRow(index)"
       @contextmenu="openRowMenu(row.track, $event)"
+      @pointerdown="onRowPointerDown($event, row.track)"
+      @pointermove="longPress.move"
+      @pointerup="longPress.end"
+      @pointercancel="longPress.end"
+      @pointerleave="longPress.end"
     >
       <span class="col-index">
         <span v-if="row.playing" class="wp-icon filled index-playing">&#xF5AC;</span>

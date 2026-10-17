@@ -4,7 +4,8 @@ import { useRouter } from "vue-router";
 import { usePluginsStore, type AggregatedSourceResult, type PluginRecord } from "@/stores/plugins";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
-import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { openContextMenu, openContextMenuAt, type ContextMenuItem } from "@/services/contextMenu";
+import { useLongPress } from "@/composables/useLongPress";
 import { openPlaylistPicker } from "@/services/playlistPicker";
 import { copyText } from "@/services/clipboard";
 import { trackArtist, trackTitle } from "@/types/player";
@@ -75,6 +76,11 @@ function playFromSource(section: SectionView, index: number) {
   if (songs.length) void player.playTracks(songs, index);
 }
 
+/** 移动端单击卡片即播放（桌面端仍保持双击播放） */
+function onSongClick(section: SectionView, index: number) {
+  if (isMobile) playFromSource(section, index);
+}
+
 /* ------------------------------ 歌曲卡片右键菜单 ------------------------------ */
 
 const canAddToPlaylist = computed(
@@ -83,8 +89,8 @@ const canAddToPlaylist = computed(
     plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
 );
 
-/** 推荐歌曲右键菜单：添加到歌单 / 添加到喜欢 / 复制歌曲名 / 复制歌曲别名 */
-function openSongMenu(song: UnifiedTrack, event: MouseEvent) {
+/** 推荐歌曲菜单项：添加到歌单 / 添加到喜欢 / 复制歌曲名 / 复制歌曲别名 */
+function songMenuItems(song: UnifiedTrack): ContextMenuItem[] {
   const liked = library.isLiked(song);
   const items: ContextMenuItem[] = [];
   if (canAddToPlaylist.value) {
@@ -117,14 +123,28 @@ function openSongMenu(song: UnifiedTrack, event: MouseEvent) {
       action: () => copyText(alias, "歌曲别名"),
     });
   }
-  openContextMenu(event, items);
+  return items;
+}
+
+/** 推荐歌曲右键菜单（桌面端） */
+function openSongMenu(song: UnifiedTrack, event: MouseEvent) {
+  // 移动端无鼠标右键，交给长按手势
+  if (isMobile) return;
+  openContextMenu(event, songMenuItems(song));
+}
+
+/** 移动端长按：在触摸点弹出歌曲菜单 */
+const longPress = useLongPress();
+
+function onSongPointerDown(event: PointerEvent, song: UnifiedTrack) {
+  longPress.start(event, (point) => openContextMenuAt(point.x, point.y, songMenuItems(song)));
 }
 
 onMounted(loadWithCache);
 </script>
 
 <template>
-  <div class="wp-page">
+  <div class="wp-page recommend-page" :class="{ 'is-mobile': isMobile }">
     <div class="wp-page-header">
       <h1 class="wp-page-title">推荐</h1>
       <button class="wp-standard-button" :disabled="loading" @click="load">
@@ -184,13 +204,19 @@ onMounted(loadWithCache);
             v-for="(song, index) in section.result.songs.slice(0, 12)"
             :key="song.id"
             class="song-card"
+            @click="onSongClick(section, index)"
             @dblclick="playFromSource(section, index)"
             @contextmenu="openSongMenu(song, $event)"
+            @pointerdown="onSongPointerDown($event, song)"
+            @pointermove="longPress.move"
+            @pointerup="longPress.end"
+            @pointercancel="longPress.end"
+            @pointerleave="longPress.end"
           >
             <div class="song-cover">
               <CachedImage v-if="song.cover" :src="song.cover" class="cover-img" />
               <span v-else class="wp-icon cover-placeholder">&#xE852;</span>
-              <button class="song-play" title="播放" @click="playFromSource(section, index)">
+              <button class="song-play" title="播放" @click.stop="playFromSource(section, index)">
                 <span class="wp-icon filled">&#xF610;</span>
               </button>
             </div>
@@ -338,6 +364,14 @@ onMounted(loadWithCache);
 .song-card:hover .song-play {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* 触摸端没有 hover：播放按钮常显，否则移动端看不到入口 */
+@media (hover: none) {
+  .song-play {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .song-name {

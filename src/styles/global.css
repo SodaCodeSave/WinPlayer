@@ -21,6 +21,8 @@
   box-sizing: border-box;
   /* 关闭移动端点击时系统默认的蓝色高亮层（桌面端无此效果，不影响） */
   -webkit-tap-highlight-color: transparent;
+  /* 长按不弹出系统「复制/打开」气泡，长按菜单由应用自己处理 */
+  -webkit-touch-callout: none;
 }
 
 html,

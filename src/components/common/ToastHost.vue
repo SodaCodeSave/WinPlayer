@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useToasts } from "@/services/toast";
+import { useIsMobile } from "@/composables/useIsMobile";
 
 const items = useToasts();
+const isMobile = useIsMobile();
 </script>
 
 <template>
-  <div class="toast-host">
+  <div class="toast-host" :class="{ 'is-mobile': isMobile }">
     <transition-group name="toast">
       <div v-for="item in items" :key="item.id" class="toast-item" :class="item.type">
         <span class="wp-icon toast-icon">
@@ -29,6 +31,21 @@ const items = useToasts();
   gap: var(--space-md);
   z-index: 100;
   pointer-events: none;
+}
+
+/* 移动端：桌面播放条高度不适用，抬到「迷你条 + 底部导航 + 安全区」之上，
+   并左右留边避免长文案贴边；z-index 高于全屏播放页(100) */
+.toast-host.is-mobile {
+  bottom: calc(112px + var(--safe-area-bottom) + var(--space-xl));
+  left: var(--space-lg);
+  right: var(--space-lg);
+  transform: none;
+  align-items: stretch;
+  z-index: 150;
+}
+
+.toast-host.is-mobile .toast-item {
+  max-width: none;
 }
 
 .toast-item {

@@ -390,6 +390,86 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 完整历史 + 全部 tag，用于确定上一个 tag 并按前缀归类提交
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 按提交前缀（feat/fix/refactor/...）分类生成 Release 正文，
+      # 无标准前缀的提交（revert、merge 等）归入「其他」兜底；
+      # generate_release_notes 会让 GitHub 在此正文后追加贡献者与对比链接
+      - name: Generate release notes body
+        shell: bash
+        run: |
+          current="${GITHUB_REF_NAME#refs/tags/}"
+
+          # 上一个 tag：按创建时间升序遍历，取当前 tag 的前一个
+          # （兼容重推旧 tag 的场景，倒序取法会拿到更新的 tag 导致区间反向）
+          prev=""
+          for t in $(git tag --sort=creatordate); do
+            if [ "$t" = "$current" ]; then break; fi
+            prev="$t"
+          done
+
+          if [ -n "$prev" ]; then
+            range="$prev..$current"
+            echo "commit range: $range"
+          else
+            # 首个 tag：列出该 tag 包含的全部提交
+            range="$current"
+            echo "first release, listing all commits up to $current"
+          fi
+
+          declare -A sections
+          order=(feat fix refactor perf build ci docs style chore other)
+          title_of() {
+            case "$1" in
+              feat)     echo "✨ 新功能";;
+              fix)      echo "🐛 问题修复";;
+              refactor) echo "♻️ 重构";;
+              perf)     echo "⚡️ 性能优化";;
+              build)    echo "📦 构建与依赖";;
+              ci)       echo "🔧 CI";;
+              docs)     echo "📝 文档";;
+              style)    echo "💄 样式调整";;
+              chore)    echo "🧹 杂项";;
+              *)        echo "📁 其他";;
+            esac
+          }
+
+          # 进程替换而非管道，避免 while 在子 shell 中执行导致 sections 丢失；
+          # 正则先存变量，内联写在 [[ =~ ]] 会报语法错误
+          re='^([A-Za-z]+)(\([^)]*\))?!?:[[:space:]]*(.+)$'
+          while IFS= read -r subject; do
+            [ -n "$subject" ] || continue
+            if [[ "$subject" =~ $re ]]; then
+              base="${BASH_REMATCH[1]}"
+              title="${BASH_REMATCH[3]}"
+              case "$base" in
+                feat|fix|refactor|perf|build|ci|docs|style|chore) : ;;
+                *) base=other ;;
+              esac
+            else
+              base=other
+              title="$subject"
+            fi
+            sections["$(title_of "$base")"]+="- $title"$'\n'
+          done < <(git log --pretty=format:"%s" "$range")
+
+          {
+            echo "## 更新内容"
+            echo
+            for cat in feat fix refactor perf build ci docs style chore other; do
+              h="$(title_of "$cat")"
+              [ -z "${sections[$h]}" ] && continue
+              echo "### $h"
+              echo "${sections[$h]}"
+            done
+          } > release_body.md
+
+          cat release_body.md
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -400,4 +480,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
+          body_path: release_body.md
           generate_release_notes: true

@@ -5,7 +5,14 @@ import { Slider } from "winuionweb";
 import CachedImage from "@/components/common/CachedImage.vue";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
-import { PLAY_MODE_LABEL, formatTime, trackArtist, trackTitle } from "@/types/player";
+import {
+  PLAY_MODE_LABEL,
+  formatTime,
+  playModeIcon,
+  playModeIconFilled,
+  trackArtist,
+  trackTitle,
+} from "@/types/player";
 import QueuePanel from "./QueuePanel.vue";
 import LyricsPanel from "./LyricsPanel.vue";
 
@@ -48,20 +55,9 @@ function go(target: RouteLocationRaw): void {
   void router.push(target);
 }
 
-const modeIcon = computed(() => {
-  switch (player.mode) {
-    case "shuffle":
-      return "&#xEF37;";
-    case "loop-one":
-      return "&#xEF34;";
-    case "loop-all":
-      return "&#xF172;";
-    default:
-      return "&#xF610;"; // 顺序播放借用播放图标，避免与循环混淆
-  }
-});
+const modeIcon = computed(() => playModeIcon(player.mode));
 // F610 在 Regular 字重撞码为电源键，顺序播放时需切到 Filled 字重
-const modeIconFilled = computed(() => !["shuffle", "loop-one", "loop-all"].includes(player.mode));
+const modeIconFilled = computed(() => playModeIconFilled(player.mode));
 
 function onSeekInput(value: number): void {
   const v = Number(value);
