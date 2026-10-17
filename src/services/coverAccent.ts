@@ -28,10 +28,22 @@ const WUI_ACCENT_VARS = [
   "--accent-text",
 ] as const;
 
+/**
+ * winuionweb 主题字典的 WinUI 系统 Brush 层变量：组件取色优先命中它们
+ * （如 --SliderTrackValueFill: var(--AccentFillColorDefaultBrush, var(--accent-base))），
+ * 不覆盖的话 --accent-base 兜底永远不会生效。Disabled 保持主题中性灰不动。
+ */
+const WUI_BRUSH_VARS = [
+  "--AccentFillColorDefaultBrush",
+  "--AccentFillColorSecondaryBrush",
+  "--AccentFillColorTertiaryBrush",
+] as const;
+
 /** 清除封面取色覆盖，恢复主题默认强调色 */
 export function clearAccent(): void {
   const style = document.documentElement.style;
-  for (const name of [...ACCENT_VARS, ...WUI_ACCENT_VARS]) style.removeProperty(name);
+  for (const name of [...ACCENT_VARS, ...WUI_ACCENT_VARS, ...WUI_BRUSH_VARS])
+    style.removeProperty(name);
 }
 
 /**
@@ -90,6 +102,10 @@ function applyAccent(hex: string): void {
   style.setProperty("--accent-aa-fill", shiftLightness(hex, dark ? 0.18 : -0.18));
   style.setProperty("--accent-aa-text", text);
   style.setProperty("--accent-text", text);
+  // WinUI 系统 Brush 层（Slider/开关/进度条等主题字典的真正取色来源）
+  style.setProperty("--AccentFillColorDefaultBrush", hex);
+  style.setProperty("--AccentFillColorSecondaryBrush", `${hex}e6`);
+  style.setProperty("--AccentFillColorTertiaryBrush", `${hex}cc`);
 }
 
 function hexToRgb(hex: string): [number, number, number] | null {
