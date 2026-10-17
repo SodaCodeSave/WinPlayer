@@ -229,6 +229,27 @@ jobs:
                   print(f"created {name}")
           PYEOF
 
+      # cpal 的 Oboe 宿主依赖 C++ 运行时（libwinplayer_lib.so 引用
+      # __cxa_pure_virtual），新 NDK 不再静态链入 libc++，需把
+      # libc++_shared.so 打进 APK，否则 dlopen 失败启动即闪退
+      - name: Bundle libc++_shared.so
+        run: |
+          NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/*/ | sort -V | tail -1)
+          SYSROOT="${NDK_DIR}toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
+          declare -A ABIS=(
+            [aarch64-linux-android]=arm64-v8a
+            [armv7a-linux-androideabi]=armeabi-v7a
+            [i686-linux-android]=x86
+            [x86_64-linux-android]=x86_64
+          )
+          for triple in "${!ABIS[@]}"; do
+            abi="${ABIS[$triple]}"
+            dest="src-tauri/gen/android/app/src/main/jniLibs/$abi"
+            mkdir -p "$dest"
+            cp "$SYSROOT/$triple/libc++_shared.so" "$dest/"
+            echo "bundled libc++_shared.so -> $abi"
+          done
+
       # 优先使用 Secret 中的固定 debug 密钥（ANDROID_DEBUG_KEYSTORE_BASE64）；
       # 未配置时现场生成并作为 Artifact 上传，下载一次回填为 Secret 后签名即固定
       - name: Import or generate debug keystore
