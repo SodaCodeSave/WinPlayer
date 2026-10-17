@@ -3,8 +3,13 @@
 //! 采样率/声道转换交给 rodio 混音器（UniformSourceIterator 自动把
 //! RingSource 声明的原始参数转换到设备参数），解码线程不做重采样。
 //!
-//! 线程随时可能因会话代号变化而退出（快速切歌/停止），所有副作用
-//! （Sink 装配、事件广播）都以「仍是当前会话」为前提。
+//! 会话分两种模式：
+//! - Live：首帧即装配 Sink 出声（正常加载 / seek 重建）
+//! - Preload：首帧把音源存入引擎预加载槽，不出声；由引擎在衔接时装配
+//!
+//! 线程随时可能退出：代际变化（load/stop）、既不活跃也不在淡出、预加载槽
+//! 被替换。所有事件广播（progress/duration/state/error/ended）仅由活跃
+//! 会话发出，避免 crossfade 期间新旧进度互相干扰。
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,6 +23,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 
+use super::eq::EqChain;
 use super::http_source::HttpMediaSource;
 use super::output::RingSource;
 use super::PlayerEngine;
@@ -42,16 +48,26 @@ fn extension_hint(url: &str) -> Option<String> {
     }
 }
 
-/// 启动解码会话线程（engine.load 调用）
-pub(crate) fn spawn_session(engine: Arc<PlayerEngine>, session: u64, url: String) {
+/// 启动 Live 解码会话线程（engine.load 调用）
+pub(crate) fn spawn_live(engine: Arc<PlayerEngine>, id: u64, generation: u64, url: String) {
+    spawn(engine, id, generation, url, false);
+}
+
+/// 启动预加载解码会话线程（engine.preload 调用，不出声）
+pub(crate) fn spawn_preload(engine: Arc<PlayerEngine>, id: u64, generation: u64, url: String) {
+    spawn(engine, id, generation, url, true);
+}
+
+fn spawn(engine: Arc<PlayerEngine>, id: u64, generation: u64, url: String, preload: bool) {
     std::thread::Builder::new()
         .name("audio-decode".into())
         .spawn(move || {
-            let outcome = run_session(&engine, session, &url);
-            // 仅当前会话才向外广播结果
-            if engine.is_current_session(session) {
+            let outcome = run_session(&engine, id, generation, &url, preload);
+            // 仅活跃会话才向外广播结果（预加载失败静默，前端走 ended 回退）
+            if engine.is_active(id) {
                 match outcome {
                     Ok(SessionOutcome::Ended) => engine.emit_ended(),
+                    Ok(SessionOutcome::Advanced) => {}
                     Ok(SessionOutcome::Superseded) => {}
                     Err(message) => engine.emit_error(message),
                 }
@@ -61,13 +77,21 @@ pub(crate) fn spawn_session(engine: Arc<PlayerEngine>, session: u64, url: String
 }
 
 enum SessionOutcome {
-    /// 自然播完（ring 已排空）
+    /// 自然播完且未衔接（ring 已排空，由外层广播 ended）
     Ended,
+    /// 已衔接至预加载曲目 / 正在淡出（静默退出）
+    Advanced,
     /// 被新会话取代（静默退出）
     Superseded,
 }
 
-fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<SessionOutcome, String> {
+fn run_session(
+    engine: &Arc<PlayerEngine>,
+    id: u64,
+    generation: u64,
+    url: &str,
+    preload: bool,
+) -> Result<SessionOutcome, String> {
     let dir = engine
         .buffer_dir()
         .ok_or_else(|| "无法定位音频缓冲目录".to_string())?;
@@ -75,7 +99,7 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
     // 创建流式源（同步等待首块数据，保证 probe 立即有数据可读）
     let source = HttpMediaSource::new(engine.client(), url.to_string(), &dir)
         .map_err(|e| format!("加载音频失败: {e}"))?;
-    if !engine.is_current_session(session) {
+    if engine.is_retired(id, generation) {
         return Ok(SessionOutcome::Superseded);
     }
 
@@ -91,7 +115,7 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
         .map_err(describe_probe_error)?;
-    if !engine.is_current_session(session) {
+    if engine.is_retired(id, generation) {
         return Ok(SessionOutcome::Superseded);
     }
 
@@ -113,9 +137,17 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
         (Some(n_frames), Some(tb)) => n_frames as f64 * tb.numer as f64 / tb.denom as f64,
         _ => 0.0,
     };
-    if duration_secs > 0.0 {
-        engine.emit_duration(duration_secs);
-    }
+    // duration 事件在活跃后发射（预加载会话转正前不上报，防止前端时长被提前改写）
+    let mut duration_emitted = false;
+
+    // 会话级 EQ 链：主配置仅承载开关/增益，双流混音时各会话滤波状态独立
+    let eq = EqChain::new();
+    let (eq_enabled, eq_gains) = engine.eq_master.snapshot();
+    let mut eq_version = engine.eq_master.version();
+    eq.update(|state| {
+        state.set_enabled(eq_enabled);
+        state.set_gains(eq_gains);
+    });
 
     // 首帧解码前采样率/声道未知，ring 延迟创建
     let mut ring: Option<(rtrb::Producer<f32>, usize)> = None;
@@ -128,29 +160,49 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
     let mut was_buffering = false;
 
     loop {
-        if !engine.is_current_session(session) {
+        if engine.is_retired(id, generation) {
             return Ok(SessionOutcome::Superseded);
         }
 
-        // 处理 seek 请求（可能在 push 阻塞期间被设置）
-        if let Some(secs) = engine.take_pending_seek() {
-            apply_seek(
-                engine,
-                session,
-                &mut format,
-                &mut decoder,
-                track_id,
-                secs,
-                channels,
-                sample_rate,
-                &mut ring,
-                &mut sample_buf,
-                &mut current_time,
-                &mut was_buffering,
-                duration_secs,
-            )?;
-            last_progress = Instant::now();
-            continue;
+        // duration 事件：转正（或本就是活跃会话）后补发
+        if !duration_emitted && duration_secs > 0.0 && engine.is_active(id) {
+            duration_emitted = true;
+            engine.emit_duration(duration_secs);
+        }
+
+        // 处理 seek 请求（仅活跃会话消费；可能在 push 阻塞期间被设置）
+        if engine.is_active(id) {
+            if let Some(secs) = engine.take_pending_seek() {
+                apply_seek(
+                    engine,
+                    &mut format,
+                    &mut decoder,
+                    track_id,
+                    secs,
+                    channels,
+                    sample_rate,
+                    &mut ring,
+                    &mut sample_buf,
+                    &mut current_time,
+                    &mut was_buffering,
+                    duration_secs,
+                )?;
+                last_progress = Instant::now();
+                continue;
+            }
+        }
+
+        // crossfade 触发检测（仅活跃的 Live 会话；预加载会话不触发）
+        if !preload && engine.is_active(id) && duration_secs > 0.0 && engine.is_playing() {
+            let (cf_enabled, fade_secs) = engine.crossfade_config();
+            let remaining = duration_secs - current_time;
+            if cf_enabled && fade_secs > 0.0 && duration_secs > fade_secs * 2.0 && remaining <= fade_secs
+            {
+                if engine.try_begin_crossfade(id) {
+                    // 身份已移交：以「淡出中」身份继续供数，直至排空
+                    continue;
+                }
+            }
         }
 
         // 读取下一包
@@ -160,21 +212,29 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
                 if err.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
                 // 自然结束：MP3 无 Xing 头等场景到结尾才知道真实时长
-                if duration_secs <= 0.0 && current_time > 0.0 {
+                if engine.is_active(id) && duration_secs <= 0.0 && current_time > 0.0 {
                     duration_secs = current_time;
                     engine.emit_duration(duration_secs);
                     engine.emit_progress(current_time, duration_secs);
                 }
-                // 等 ring 排空（会话变更时提前返回）
+                // 等 ring 排空（退休时提前返回）
                 if let Some((producer, capacity)) = ring.as_ref() {
-                    while engine.is_current_session(session) && producer.slots() < *capacity {
+                    while !engine.is_retired(id, generation) && producer.slots() < *capacity {
                         std::thread::sleep(Duration::from_millis(20));
                     }
                 }
-                if !engine.is_current_session(session) {
+                if engine.is_retired(id, generation) {
                     return Ok(SessionOutcome::Superseded);
                 }
-                return Ok(SessionOutcome::Ended);
+                if engine.is_active(id) {
+                    // 尝试 gapless 衔接；预载未就绪则回退 ended（前端换曲）
+                    if engine.try_gapless_append(id) {
+                        return Ok(SessionOutcome::Advanced);
+                    }
+                    return Ok(SessionOutcome::Ended);
+                }
+                // 淡出中（crossfade 已触发）：静默退出
+                return Ok(SessionOutcome::Advanced);
             }
             Err(SymphoniaError::ResetRequired) => return Err("音频流被重置".to_string()),
             Err(e) => return Err(format!("解码出错: {e}")),
@@ -190,47 +250,57 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
             Err(e) => return Err(describe_codec_error(e)),
         };
 
-        // 首帧：确定流参数并装配 ring + Sink
+        // 首帧：确定流参数并装配 ring
         if ring.is_none() {
             let spec = *decoded.spec();
             channels = spec.channels.count();
             sample_rate = spec.rate;
-            engine.eq.update(|state| state.set_stream_format(sample_rate, channels));
+            eq.update(|state| state.set_stream_format(sample_rate, channels));
 
             let capacity = ring_capacity(sample_rate, channels);
             let (producer, consumer) = rtrb::RingBuffer::new(capacity);
             let ring_source = RingSource::new(consumer, channels as u16, sample_rate);
-            engine.swap_sink(ring_source)?;
+            if preload {
+                // 预加载：不出声，把音源交给引擎预加载槽等待衔接
+                if !engine.store_preload_source(id, ring_source) {
+                    return Ok(SessionOutcome::Superseded);
+                }
+            } else {
+                engine.swap_sink(ring_source)?;
+            }
             ring = Some((producer, capacity));
 
             let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
             buffer.copy_interleaved_ref(decoded);
-            // 均衡器处理（交错样本，逐声道 biquad）
-            engine.eq.process(buffer.samples_mut());
-            match push_all(engine, session, &mut ring, &buffer.samples()) {
+            match apply_eq_and_push(engine, id, generation, &eq, &mut eq_version, &mut ring, &mut buffer) {
                 PushOutcome::Superseded => return Ok(SessionOutcome::Superseded),
                 // 首帧期间收到 seek：回到主循环顶部统一应用
                 PushOutcome::SeekRequested => continue,
                 PushOutcome::Completed => {}
             }
-            if !engine.is_current_session(session) {
-                return Ok(SessionOutcome::Superseded);
+            if !engine.is_retired(id, generation) {
+                last_progress = Instant::now();
+                if engine.is_active(id) {
+                    engine.emit_progress(current_time, duration_secs);
+                }
             }
-            last_progress = Instant::now();
-            engine.emit_progress(current_time, duration_secs);
             continue;
         }
 
         // buffering 检测：播放中且 ring 已空 → 广播 buffering；恢复后广播 playing
         let buffering_now = engine.is_playing() && ring_full(&ring);
-        if buffering_now && !was_buffering {
-            was_buffering = true;
-            engine.set_buffering(true);
-            engine.emit_state("buffering");
-        } else if !buffering_now && was_buffering {
-            was_buffering = false;
-            engine.set_buffering(false);
-            engine.emit_state("playing");
+        if engine.is_active(id) {
+            if buffering_now && !was_buffering {
+                was_buffering = true;
+                engine.set_buffering(true);
+                engine.emit_state("buffering");
+            } else if !buffering_now && was_buffering {
+                was_buffering = false;
+                engine.set_buffering(false);
+                engine.emit_state("playing");
+            }
+        } else {
+            was_buffering = buffering_now;
         }
 
         let spec = *decoded.spec();
@@ -239,40 +309,60 @@ fn run_session(engine: &Arc<PlayerEngine>, session: u64, url: &str) -> Result<Se
         }
         let buffer = sample_buf.as_mut().unwrap();
         buffer.copy_interleaved_ref(decoded);
-        // 均衡器处理（交错样本，逐声道 biquad）
-        engine.eq.process(buffer.samples_mut());
-        match push_all(engine, session, &mut ring, buffer.samples()) {
+        match apply_eq_and_push(engine, id, generation, &eq, &mut eq_version, &mut ring, &mut *buffer) {
             PushOutcome::Superseded => return Ok(SessionOutcome::Superseded),
             // ring 满阻塞期间收到 seek：样本丢弃，回到主循环顶部应用
             PushOutcome::SeekRequested => continue,
             PushOutcome::Completed => {}
         }
-        if !engine.is_current_session(session) {
-            return Ok(SessionOutcome::Superseded);
-        }
 
-        // progress 事件（节流）
-        if last_progress.elapsed() >= PROGRESS_INTERVAL {
+        // progress 事件（节流，仅活跃会话）
+        if engine.is_active(id) && last_progress.elapsed() >= PROGRESS_INTERVAL {
             last_progress = Instant::now();
             engine.emit_progress(current_time, duration_secs);
         }
     }
 }
 
-/// push_all 的结果：ring 满阻塞期间可能发生会话变更或收到新 seek
+/// EQ 配置同步 + 均衡器处理 + 推入 ring（含中断检查）
+fn apply_eq_and_push(
+    engine: &Arc<PlayerEngine>,
+    id: u64,
+    generation: u64,
+    eq: &EqChain,
+    eq_version: &mut u64,
+    ring: &mut Option<(rtrb::Producer<f32>, usize)>,
+    buffer: &mut SampleBuffer<f32>,
+) -> PushOutcome {
+    // 主配置版本变化（用户调 EQ）：同步到本会话链
+    let master_version = engine.eq_master.version();
+    if master_version != *eq_version {
+        *eq_version = master_version;
+        let (enabled, gains) = engine.eq_master.snapshot();
+        eq.update(|state| {
+            state.set_enabled(enabled);
+            state.set_gains(gains);
+        });
+    }
+    eq.process(buffer.samples_mut());
+    push_all(engine, id, generation, ring, buffer.samples())
+}
+
+/// push_all 的结果：ring 满阻塞期间可能发生会话退休或收到新 seek
 enum PushOutcome {
     /// 全部推完
     Completed,
-    /// 会话已被取代（静默退出）
+    /// 会话已退休（静默退出）
     Superseded,
     /// 期间收到新的 seek 请求（样本已丢弃，交由主循环统一应用）
     SeekRequested,
 }
 
-/// 把样本推入 ring（阻塞直到推完）；期间发生会话变更/新 seek 时中断（样本丢弃）
+/// 把样本推入 ring（阻塞直到推完）；期间退休/新 seek 时中断（样本丢弃）
 fn push_all(
     engine: &Arc<PlayerEngine>,
-    session: u64,
+    id: u64,
+    generation: u64,
     ring: &mut Option<(rtrb::Producer<f32>, usize)>,
     samples: &[f32],
 ) -> PushOutcome {
@@ -285,11 +375,11 @@ fn push_all(
             Ok(()) => offset += 1,
             Err(_) => {
                 // ring 已满：检查是否需要中断，否则等待消费端腾出空间
-                if !engine.is_current_session(session) {
+                if engine.is_retired(id, generation) {
                     return PushOutcome::Superseded;
                 }
                 // 只窥探不取走：seek 值由主循环顶部统一取出应用
-                if engine.has_pending_seek() {
+                if engine.is_active(id) && engine.has_pending_seek() {
                     return PushOutcome::SeekRequested;
                 }
                 std::thread::sleep(Duration::from_millis(2));
@@ -310,7 +400,6 @@ fn ring_full(ring: &Option<(rtrb::Producer<f32>, usize)>) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn apply_seek(
     engine: &Arc<PlayerEngine>,
-    session: u64,
     format: &mut Box<dyn symphonia::core::formats::FormatReader>,
     decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
     track_id: u32,
@@ -324,7 +413,7 @@ fn apply_seek(
     duration_secs: f64,
 ) -> Result<(), String> {
     let target = Time::from(secs);
-    if let Err(_) = format.seek(SeekMode::Coarse, SeekTo::Time { time: target, track_id: Some(track_id) }) {
+    if format.seek(SeekMode::Coarse, SeekTo::Time { time: target, track_id: Some(track_id) }).is_err() {
         return Err("该音源不支持拖动进度".to_string());
     }
     decoder.reset();
@@ -333,7 +422,8 @@ fn apply_seek(
     // 换新 ring + Sink，瞬时切断旧数据
     let capacity = ring_capacity(sample_rate, channels);
     let (producer, consumer) = rtrb::RingBuffer::new(capacity);
-    let ring_source = RingSource::new(consumer, channels.max(1) as u16, if sample_rate > 0 { sample_rate } else { 44_100 });
+    let ring_source =
+        RingSource::new(consumer, channels.max(1) as u16, if sample_rate > 0 { sample_rate } else { 44_100 });
     engine.swap_sink(ring_source)?;
     *ring = Some((producer, capacity));
     *was_buffering = engine.is_playing();
@@ -342,7 +432,6 @@ fn apply_seek(
     }
     *current_time = secs;
     engine.emit_progress(*current_time, duration_secs);
-    let _ = session;
     Ok(())
 }
 

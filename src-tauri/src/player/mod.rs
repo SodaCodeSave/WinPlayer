@@ -1,13 +1,26 @@
 //! 原生音频播放引擎：解码（symphonia）→ EQ（biquad 链）→ ring buffer → rodio 输出。
 //!
-//! 会话模型：每次 load/stop/seek 都递增单调会话代号，解码线程每个步骤校验
-//! 代号，不匹配立即退出并清理临时文件——快速切歌不会残留旧会话。
+//! 会话模型：每个解码线程持有单调递增的会话 ID 与启动时的代际（generation）。
+//! load/stop 递增 generation 使所有旧线程（含预加载线程）退出；跨淡/无缝
+//! 衔接则把活跃身份（`active`）移交给预加载会话，旧线程以「淡出中」身份
+//! 继续供数直至排空。
+//!
+//! 衔接模型（自动切歌）：
+//! - 前端提前解析下一首直链并调用 `player_preload`，后端并行解码到独立
+//!   ring（不触碰当前 Sink）；
+//! - Crossfade：剩余 ≤ 淡入淡出时长时，新 Sink 音量 0 淡入、旧 Sink 移入
+//!   fading 槽淡出，随后广播 `player://advanced`；
+//! - Gapless：旧曲 ring 排空后把预载源 append 进同一 Sink（rodio 源队列
+//!   自动衔接），同样广播 `player://advanced`；
+//! - 预载未就绪/解析失败时回退旧行为：广播 `player://ended` 由前端换曲。
 //!
 //! Tauri 事件（前端 `listen`）：
 //! - `player://progress`  `{ currentTime, duration }`，解码循环每 250ms
 //! - `player://duration`  `{ duration }`（probe 后，估算或精确，秒）
 //! - `player://state`     `{ state }`：buffering / playing / paused / idle
-//! - `player://ended`     自然播完
+//! - `player://ended`     自然播完（未发生衔接时）
+//! - `player://advanced`  `{ url }`：已衔接至预加载曲目（crossfade 起点 /
+//!   gapless 衔接点），前端据此切换曲目元数据
 //! - `player://error`     `{ message }`（中文，可直接展示）
 
 pub mod decoder;
@@ -30,7 +43,11 @@ const EVENT_PROGRESS: &str = "player://progress";
 const EVENT_DURATION: &str = "player://duration";
 const EVENT_STATE: &str = "player://state";
 const EVENT_ENDED: &str = "player://ended";
+const EVENT_ADVANCED: &str = "player://advanced";
 const EVENT_ERROR: &str = "player://error";
+
+/// 淡入淡出音量斜坡步进间隔
+const FADE_STEP: Duration = Duration::from_millis(50);
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -56,15 +73,46 @@ struct ErrorPayload {
     message: String,
 }
 
+#[derive(Serialize, Clone)]
+struct AdvancedPayload {
+    url: String,
+}
+
+/// 预加载槽：下一首的解码会话信息，解码线程首帧后存入就绪的音源
+pub(crate) struct PendingSlot {
+    pub id: u64,
+    pub url: String,
+    /// 首帧解码后置 true，并持有待衔接的音源（含 ring 消费端）
+    pub source: Option<output::RingSource>,
+}
+
+impl PendingSlot {
+    fn new(id: u64, url: String) -> Self {
+        PendingSlot { id, url, source: None }
+    }
+}
+
 pub struct PlayerEngine {
     app: AppHandle,
     output: Mutex<Option<Output>>,
-    /// 当前 Sink（None = 空闲）
-    sink: Mutex<Option<rodio::Sink>>,
-    /// 会话代号，load/stop/seek 均递增
+    /// 当前活跃 Sink（crossfade 期间为即将转正的新音源）
+    sink: Mutex<Option<Arc<rodio::Sink>>>,
+    /// 淡出中的旧 Sink（crossfade 过渡期短暂存在）
+    fading_sink: Mutex<Option<Arc<rodio::Sink>>>,
+    /// 会话 ID 分配器（每个解码线程一个）
     session: AtomicU64,
+    /// 代际：load/stop 递增，使所有旧线程（含预加载线程）退出
+    generation: AtomicU64,
+    /// 当前活跃会话 ID（接收 seek、上报事件、触发衔接）
+    active: AtomicU64,
+    /// 淡出中的会话 ID（其线程需继续供数直至排空）
+    fading: AtomicU64,
+    /// 预加载槽（None = 无预加载）
+    pending: Mutex<Option<PendingSlot>>,
+    /// 活跃音源的结束标记（gapless 衔接时置位，令旧源排空后让位）
+    ended_flag: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     volume: Mutex<f32>,
-    /// 待应用的 seek 目标（秒），由解码线程消费
+    /// 待应用的 seek 目标（秒），由活跃解码线程消费
     pending_seek: Mutex<Option<f64>>,
     /// 用户期望的播放状态（与 Sink 的暂停位镜像）
     is_playing: AtomicBool,
@@ -74,8 +122,11 @@ pub struct PlayerEngine {
     current_url: Mutex<Option<String>>,
     /// HTTP 客户端（长连接复用）
     client: reqwest::blocking::Client,
-    /// 均衡器
-    pub eq: EqChain,
+    /// EQ 主配置（仅承载开关/增益/版本；会话线程各自实例化滤波链——
+    /// crossfade 双流采样率可能不同，滤波状态不能共享）
+    eq_master: EqChain,
+    /// 横向淡入淡出配置（启用 + 时长秒）
+    crossfade: Mutex<(bool, f64)>,
 }
 
 impl PlayerEngine {
@@ -92,46 +143,93 @@ impl PlayerEngine {
             // 含大量 unwrap，且 release 配置 panic=abort，一旦 panic 即闪退
             output: Mutex::new(None),
             sink: Mutex::new(None),
+            fading_sink: Mutex::new(None),
             session: AtomicU64::new(0),
+            generation: AtomicU64::new(1),
+            active: AtomicU64::new(0),
+            fading: AtomicU64::new(0),
+            pending: Mutex::new(None),
+            ended_flag: Mutex::new(None),
             volume: Mutex::new(0.8),
             pending_seek: Mutex::new(None),
             is_playing: AtomicBool::new(false),
             buffering: AtomicBool::new(false),
             current_url: Mutex::new(None),
             client,
-            eq: EqChain::new(),
+            eq_master: EqChain::new(),
+            crossfade: Mutex::new((true, 6.0)),
         });
         // 空闲状态广播一次，前端据此复位
         let _ = app.emit(EVENT_STATE, StatePayload { state: "idle" });
         engine
     }
 
-    fn session(&self) -> u64 {
-        self.session.load(Ordering::Acquire)
-    }
-
     fn bump_session(&self) -> u64 {
         self.session.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    fn bump_generation(&self) -> u64 {
+        self.generation.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    fn active_id(&self) -> u64 {
+        self.active.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn is_active(&self, id: u64) -> bool {
+        self.active_id() == id
+    }
+
+    /// 预加载槽是否仍归属该会话（预加载线程存活依据之一）
+    fn pending_has(&self, id: u64) -> bool {
+        self.pending.lock().unwrap().as_ref().map(|slot| slot.id) == Some(id)
+    }
+
+    /// 线程退出判定：代际过期，或既不活跃、也不在淡出、也不持有预加载槽
+    pub(crate) fn is_retired(&self, id: u64, generation: u64) -> bool {
+        if self.generation() != generation {
+            return true;
+        }
+        !self.is_active(id) && self.fading.load(Ordering::Acquire) != id && !self.pending_has(id)
     }
 
     pub(crate) fn emit_state(&self, state: &'static str) {
         let _ = self.app.emit(EVENT_STATE, StatePayload { state });
     }
 
+    /// 记录活跃音源的结束标记句柄（install_sink / 衔接时调用）
+    fn register_ended_flag(&self, source: &output::RingSource) {
+        *self.ended_flag.lock().unwrap() = Some(source.ended_handle());
+    }
+
+    /// 确保输出设备就绪（懒初始化）
+    fn ensure_output(&self) -> Result<(), String> {
+        let mut guard = self.output.lock().unwrap();
+        if guard.is_none() {
+            // 懒初始化：首次播放才打开音频输出；失败不缓存，下次再试
+            *guard = Output::open().ok();
+        }
+        if guard.is_none() {
+            return Err("音频输出设备不可用".to_string());
+        }
+        Ok(())
+    }
+
     /// 用新音源整体替换 Sink（旧 Sink 先 stop 再丢弃，防止混音器残留）
     fn install_sink(&self, source: output::RingSource) -> Result<(), String> {
-        let output_guard = {
-            let mut guard = self.output.lock().unwrap();
-            if guard.is_none() {
-                // 懒初始化：首次播放才打开音频输出；失败不缓存，下次再试
-                *guard = Output::open().ok();
-            }
+        self.ensure_output()?;
+        let sink = {
+            let guard = self.output.lock().unwrap();
             guard
+                .as_ref()
+                .unwrap()
+                .new_sink(*self.volume.lock().unwrap())?
         };
-        let Some(output) = output_guard.as_ref() else {
-            return Err("音频输出设备不可用".to_string());
-        };
-        let sink = output.new_sink(*self.volume.lock().unwrap())?;
+        self.register_ended_flag(&source);
         if self.is_playing.load(Ordering::Acquire) {
             sink.play();
         }
@@ -140,35 +238,173 @@ impl PlayerEngine {
         if let Some(old) = guard.take() {
             old.stop();
         }
-        *guard = Some(sink);
+        *guard = Some(Arc::new(sink));
         Ok(())
     }
 
-    /// 加载 URL 并开始缓冲（不自动播放）
+    /// 停止淡出中的 Sink（硬切换时调用，防止旧曲残响）
+    fn cancel_fade(&self) {
+        if let Some(sink) = self.fading_sink.lock().unwrap().take() {
+            sink.stop();
+        }
+        self.fading.store(0, Ordering::Release);
+    }
+
+    /// 硬切换：终止一切旧会话与预加载，开始全新会话
     fn load(self: &Arc<Self>, url: String) {
-        self.bump_session();
+        let generation = self.bump_generation();
+        let id = self.bump_session();
+        self.active.store(id, Ordering::Release);
+        self.fading.store(0, Ordering::Release);
+        *self.pending.lock().unwrap() = None;
         *self.pending_seek.lock().unwrap() = None;
         self.buffering.store(false, Ordering::Release);
         self.is_playing.store(false, Ordering::Release);
         *self.current_url.lock().unwrap() = Some(url.clone());
+        self.cancel_fade();
         // 立即清掉旧 Sink（旧音频静音），新 Sink 由解码线程装配
         if let Some(old) = self.sink.lock().unwrap().take() {
             old.stop();
         }
         self.emit_state("buffering");
-        decoder::spawn_session(self.clone(), self.session(), url);
+        decoder::spawn_live(self.clone(), id, generation, url);
     }
 
-    fn stop(self: &Arc<Self>) {
-        self.bump_session();
+    fn stop(&self) {
+        self.bump_generation();
+        self.active.store(0, Ordering::Release);
+        self.fading.store(0, Ordering::Release);
+        *self.pending.lock().unwrap() = None;
         *self.pending_seek.lock().unwrap() = None;
         self.buffering.store(false, Ordering::Release);
         self.is_playing.store(false, Ordering::Release);
         *self.current_url.lock().unwrap() = None;
+        self.cancel_fade();
         if let Some(old) = self.sink.lock().unwrap().take() {
             old.stop();
         }
         self.emit_state("idle");
+    }
+
+    /// 预加载下一首：并行解码到独立 ring，不触碰当前 Sink。
+    /// 当前无活跃会话时退化为直接加载。
+    fn preload(self: &Arc<Self>, url: String) {
+        if self.active_id() == 0 || self.sink.lock().unwrap().is_none() {
+            self.load(url);
+            return;
+        }
+        let generation = self.generation();
+        let id = self.bump_session();
+        *self.pending.lock().unwrap() = Some(PendingSlot::new(id, url.clone()));
+        decoder::spawn_preload(self.clone(), id, generation, url);
+    }
+
+    /// 丢弃预加载（前端队列/模式变更导致预载目标失效时调用）
+    fn cancel_preload(&self) {
+        *self.pending.lock().unwrap() = None;
+    }
+
+    /// Crossfade 衔接：由活跃解码线程在剩余时长 ≤ 淡入淡出窗口时调用。
+    /// 成功后新 Sink 音量 0 起步并转入播放，旧 Sink 移入 fading 槽淡出。
+    pub(crate) fn try_begin_crossfade(self: &Arc<Self>, from_id: u64) -> bool {
+        let (enabled, fade_secs) = *self.crossfade.lock().unwrap();
+        if !enabled || !self.is_active(from_id) {
+            return false;
+        }
+        let mut slot = match self.pending.lock().unwrap().take() {
+            Some(slot) => slot,
+            None => return false,
+        };
+        let Some(source) = slot.source.take() else {
+            // 预载尚未就绪：放回，稍后重试
+            *self.pending.lock().unwrap() = Some(slot);
+            return false;
+        };
+        if self.ensure_output().is_err() {
+            return false;
+        }
+        let target_volume = *self.volume.lock().unwrap();
+        let new_sink = {
+            let guard = self.output.lock().unwrap();
+            match guard.as_ref().unwrap().new_sink(target_volume) {
+                Ok(sink) => Arc::new(sink),
+                Err(_) => return false,
+            }
+        };
+        self.register_ended_flag(&source);
+        new_sink.set_volume(0.0);
+        new_sink.append(source);
+        if self.is_playing.load(Ordering::Acquire) {
+            new_sink.play();
+        }
+
+        // 身份移交：预载会话转正，旧会话进入淡出
+        let old_sink = self.sink.lock().unwrap().take();
+        self.fading.store(from_id, Ordering::Release);
+        self.active.store(slot.id, Ordering::Release);
+        *self.sink.lock().unwrap() = Some(new_sink.clone());
+        self.buffering.store(false, Ordering::Release);
+        let _ = self.app.emit(EVENT_ADVANCED, AdvancedPayload { url: slot.url });
+
+        // 淡出/淡入斜坡：以主音量为基准同步缩放两路
+        let engine = self.clone();
+        let fade_generation = self.generation();
+        std::thread::Builder::new()
+            .name("audio-fade".into())
+            .spawn(move || {
+                let steps = ((fade_secs / FADE_STEP.as_secs_f64()).ceil() as usize).max(1);
+                for step in 1..=steps {
+                    // 代际变化（load/stop/seek）时立即中止斜坡
+                    if engine.generation() != fade_generation {
+                        break;
+                    }
+                    let progress = step as f32 / steps as f32;
+                    let target = *engine.volume.lock().unwrap();
+                    if let Some(old) = old_sink.as_ref() {
+                        old.set_volume(target * (1.0 - progress));
+                    }
+                    new_sink.set_volume(target * progress);
+                    std::thread::sleep(FADE_STEP);
+                }
+                if let Some(old) = old_sink.as_ref() {
+                    old.stop();
+                }
+                engine.fading.store(0, Ordering::Release);
+            })
+            .ok();
+        true
+    }
+
+    /// Gapless 衔接：由活跃解码线程在自然播完且 ring 排空后调用。
+    /// 旧源标记结束，rodio Sink 自动衔接预载源；返回是否衔接成功。
+    pub(crate) fn try_gapless_append(&self, from_id: u64) -> bool {
+        if !self.is_active(from_id) {
+            return false;
+        }
+        let mut slot = match self.pending.lock().unwrap().take() {
+            Some(slot) => slot,
+            None => return false,
+        };
+        let Some(source) = slot.source.take() else {
+            // 预载尚未就绪：放回（随后走 ended 回退）
+            *self.pending.lock().unwrap() = Some(slot);
+            return false;
+        };
+        let sink_guard = self.sink.lock().unwrap();
+        let Some(sink) = sink_guard.as_ref() else {
+            *self.pending.lock().unwrap() = Some(slot);
+            return false;
+        };
+        // 旧源标记结束：排空后 Sink 队列自动前进到新源（零间隙）
+        if let Some(flag) = self.ended_flag.lock().unwrap().take() {
+            flag.store(true, Ordering::Release);
+        }
+        self.register_ended_flag(&source);
+        sink.append(source);
+        drop(sink_guard);
+        self.active.store(slot.id, Ordering::Release);
+        let _ = self.app.emit(EVENT_ADVANCED, AdvancedPayload { url: slot.url });
+        true
     }
 }
 
@@ -177,6 +413,22 @@ impl PlayerEngine {
 #[tauri::command]
 pub fn player_load(engine: State<Arc<PlayerEngine>>, url: String) {
     engine.load(url);
+}
+
+#[tauri::command]
+pub fn player_preload(engine: State<Arc<PlayerEngine>>, url: String) {
+    engine.preload(url);
+}
+
+#[tauri::command]
+pub fn player_cancel_preload(engine: State<Arc<PlayerEngine>>) {
+    engine.cancel_preload();
+}
+
+#[tauri::command]
+pub fn player_set_crossfade(engine: State<Arc<PlayerEngine>>, enabled: bool, seconds: f64) {
+    let seconds = seconds.clamp(1.0, 15.0);
+    *engine.crossfade.lock().unwrap() = (enabled, seconds);
 }
 
 #[tauri::command]
@@ -204,6 +456,8 @@ pub fn player_stop(engine: State<Arc<PlayerEngine>>) {
 
 #[tauri::command]
 pub fn player_seek(engine: State<Arc<PlayerEngine>>, seconds: f64) {
+    // seek 意味着用户要精确控制当前位置：中断进行中的 crossfade（硬切旧曲）
+    engine.cancel_fade();
     *engine.pending_seek.lock().unwrap() = Some(seconds.max(0.0));
     // seek 后必然继续播（与 HTML5 行为一致），唤醒 Sink
     engine.is_playing.store(true, Ordering::Release);
@@ -227,7 +481,7 @@ pub fn player_set_eq(engine: State<Arc<PlayerEngine>>, enabled: bool, gains: Vec
     for (i, value) in gains.iter().take(10).enumerate() {
         bands[i] = value.clamp(-12.0, 12.0);
     }
-    engine.eq.update(|state| {
+    engine.eq_master.update(|state| {
         state.set_enabled(enabled);
         state.set_gains(bands);
     });
@@ -250,10 +504,6 @@ impl PlayerEngine {
         self.app.path().app_cache_dir().ok()
     }
 
-    pub(crate) fn is_current_session(&self, session: u64) -> bool {
-        self.session() == session
-    }
-
     pub(crate) fn is_playing(&self) -> bool {
         self.is_playing.load(Ordering::Acquire)
     }
@@ -270,6 +520,23 @@ impl PlayerEngine {
     /// 换装新 ring（seek 后调用）：整体替换 Sink 以瞬时切断旧数据
     pub(crate) fn swap_sink(&self, source: output::RingSource) -> Result<(), String> {
         self.install_sink(source)
+    }
+
+    /// 预加载会话首帧后存入就绪音源（槽被替换/清除时返回 false）
+    pub(crate) fn store_preload_source(&self, id: u64, source: output::RingSource) -> bool {
+        let mut guard = self.pending.lock().unwrap();
+        match guard.as_mut() {
+            Some(slot) if slot.id == id => {
+                slot.source = Some(source);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// crossfade 是否启用及时长（活跃线程触发判定用）
+    pub(crate) fn crossfade_config(&self) -> (bool, f64) {
+        *self.crossfade.lock().unwrap()
     }
 
     pub(crate) fn set_buffering(&self, value: bool) -> bool {

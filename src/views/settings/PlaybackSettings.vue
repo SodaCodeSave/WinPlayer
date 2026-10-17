@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { ComboBox, Slider, TextBox, ToggleSwitch } from "winuionweb";
 import { useSettingsStore, DEFAULT_SOURCE_SEARCH_FORMAT } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
+import { useIsMobile } from "@/composables/useIsMobile";
 import { EQ_FREQS, EQ_PRESETS, formatEqFreq } from "@/constants/eqPresets";
 import type { PluginCapability } from "@/types/plugin";
 
@@ -123,6 +124,14 @@ function onEqToggle(event: { IsOn: boolean }): void {
   void settings.setEqEnabled(Boolean(event?.IsOn));
 }
 
+/* ------------------------------ 无缝播放 ------------------------------ */
+
+const isMobile = useIsMobile();
+
+function onCrossfadeToggle(event: { IsOn: boolean }): void {
+  void settings.setCrossfadeEnabled(Boolean(event?.IsOn));
+}
+
 function onEqPresetChange(_sender: unknown, payload?: { AddedItems?: unknown[] }): void {
   const label = String(payload?.AddedItems?.[0] ?? "");
   if (label === EQ_CUSTOM_LABEL) return; // 自定义由手动拖动滑杆产生
@@ -186,6 +195,34 @@ function formatGain(gain: number | undefined): string {
           :PlaceholderText="DEFAULT_SOURCE_SEARCH_FORMAT"
           @update:Text="onFormatChange"
         />
+      </div>
+    </section>
+
+    <!-- 无缝播放 -->
+    <section class="settings-section">
+      <h2 class="settings-section-title">无缝播放</h2>
+      <template v-if="!isMobile">
+        <div class="settings-card">
+          <div class="card-content">
+            <div class="card-header">横向淡入淡出（Crossfade）</div>
+            <div class="card-description">
+              自动切歌前 6 秒开始混音过渡（前一首淡出、下一首淡入）；手动切歌不适用
+            </div>
+          </div>
+          <ToggleSwitch :IsOn="settings.crossfadeEnabled" @Toggled="onCrossfadeToggle" />
+        </div>
+        <div class="settings-card">
+          <div class="card-content">
+            <div class="card-header">无缝衔接（Gapless）</div>
+            <div class="card-description">始终开启：关闭淡入淡出后，自动切歌在上一曲播完的瞬间零间隙接续下一曲</div>
+          </div>
+        </div>
+      </template>
+      <div v-else class="settings-card">
+        <div class="card-content">
+          <div class="card-header">无缝衔接（Gapless）</div>
+          <div class="card-description">移动端自动切歌时无缝衔接下一曲（不支持混音过渡）</div>
+        </div>
       </div>
     </section>
 

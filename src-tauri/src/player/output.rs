@@ -3,21 +3,39 @@
 //! OutputStream 全局唯一并随引擎存活；每次加载/seek 创建新的 Sink
 //! （丢弃旧 Sink 前必须显式 `stop()`，否则混音器里会残留旧音源继续出声）。
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 
 /// 从 ring buffer 读取样本的 rodio Source。
 ///
 /// ring 为空时输出静音（混音器需要它持续拉取以保持设备活跃）；
 /// 采样率/声道数声明为解码流的原始值，rodio 混音器会自动转换到设备参数。
+///
+/// `ended` 置位且 ring 排空后，`next()` 返回 None——rodio Sink 会把该源
+/// 从播放队列移除并自动衔接下一个 append 进来的源（Gapless 的衔接机制）。
 pub struct RingSource {
     consumer: rtrb::Consumer<f32>,
     channels: u16,
     sample_rate: u32,
+    ended: Arc<AtomicBool>,
 }
 
 impl RingSource {
     pub fn new(consumer: rtrb::Consumer<f32>, channels: u16, sample_rate: u32) -> Self {
-        RingSource { consumer, channels, sample_rate }
+        RingSource {
+            consumer,
+            channels,
+            sample_rate,
+            ended: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// 结束标记句柄（解码端全部样本推送完毕后由引擎远程置位：
+    /// ring 排空后本源即结束，rodio Sink 自动衔接下一源）
+    pub fn ended_handle(&self) -> Arc<AtomicBool> {
+        self.ended.clone()
     }
 }
 
@@ -25,7 +43,16 @@ impl Iterator for RingSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        Some(self.consumer.pop().unwrap_or(0.0))
+        match self.consumer.pop() {
+            Ok(sample) => Some(sample),
+            Err(_) => {
+                if self.ended.load(Ordering::Acquire) {
+                    None
+                } else {
+                    Some(0.0)
+                }
+            }
+        }
     }
 }
 

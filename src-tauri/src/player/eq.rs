@@ -78,6 +78,8 @@ pub struct EqState {
     pre_gain: f32,
     /// 每声道一条 10 段级联链
     filters: Vec<[Biquad; 10]>,
+    /// 配置版本号：开关/增益变更时递增（会话链据此同步主配置）
+    version: u64,
 }
 
 impl EqState {
@@ -89,6 +91,7 @@ impl EqState {
             channels: 2,
             pre_gain: 1.0,
             filters: vec![[Biquad::default(); 10]; 2],
+            version: 0,
         }
     }
 
@@ -107,12 +110,18 @@ impl EqState {
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
+        if self.enabled != enabled {
+            self.enabled = enabled;
+            self.version += 1;
+        }
     }
 
     pub fn set_gains(&mut self, gains: [f32; 10]) {
-        self.gains = gains;
-        self.redesign();
+        if self.gains != gains {
+            self.gains = gains;
+            self.redesign();
+            self.version += 1;
+        }
     }
 
     /// 解码会话启动时同步流参数（变更后清空滤波状态）
@@ -169,6 +178,19 @@ impl EqChain {
         if let Ok(mut state) = self.state.try_lock() {
             state.process(samples);
         }
+    }
+
+    /// 当前配置版本号（主配置链专用：会话链据此感知配置变更）
+    pub fn version(&self) -> u64 {
+        self.state.lock().map(|state| state.version).unwrap_or(0)
+    }
+
+    /// 配置快照（开关 + 增益），供新会话初始化自己的滤波链
+    pub fn snapshot(&self) -> (bool, [f32; 10]) {
+        self.state
+            .lock()
+            .map(|state| (state.enabled, state.gains))
+            .unwrap_or((false, [0.0; 10]))
     }
 
     #[allow(dead_code)]

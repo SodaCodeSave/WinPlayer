@@ -118,6 +118,7 @@ export const usePlayerStore = defineStore("player", () => {
     // seek 场景：到达目标附近后的首个进度复位加载态（缓冲期间后端
     // 阻塞在读取/推送，不上报进度，不会误清）
     loading.value = false;
+    void maybePreload();
   });
   engine.on("durationchange", (value) => {
     if (value > 0) duration.value = value;
@@ -135,6 +136,9 @@ export const usePlayerStore = defineStore("player", () => {
   engine.on("ended", () => {
     handleEnded();
   });
+  engine.on("advanced", (url) => {
+    handleAdvanced(url);
+  });
   engine.on("error", (message) => {
     loading.value = false;
     playing.value = false;
@@ -150,6 +154,7 @@ export const usePlayerStore = defineStore("player", () => {
   /** 播放队列中指定位置的曲目 */
   async function playAt(index: number): Promise<void> {
     if (index < 0 || index >= queue.value.length) return;
+    resetPreload(); // 硬加载会终止后端预加载会话
     currentIndex.value = index;
     const track = queue.value[index].track;
     console.log(`[player] 播放请求 #${index}: ${track.sourceId}:${track.id} 《${track.name}》`);
@@ -263,6 +268,65 @@ export const usePlayerStore = defineStore("player", () => {
     }
   }
 
+  /* ------------------------------ 无缝播放（预加载 + 衔接） ------------------------------ */
+
+  /** 提前量（秒）：剩余这么久时开始解析并预加载下一首直链 */
+  const PRELOAD_AHEAD_SEC = 20;
+
+  /** 预加载状态：目标索引与已解析直链（url 为空 = 解析中，占位防重入） */
+  let preload: { index: number; url: string } | null = null;
+
+  /** 自动切歌的下一曲索引；不可预知（sequential 末尾 / shuffle 一轮重洗）时返回 null */
+  function nextAutoIndex(): number | null {
+    if (!queue.value.length || currentIndex.value < 0) return null;
+    if (mode.value === "loop-one") return currentIndex.value;
+    const next = currentIndex.value + 1;
+    if (next < queue.value.length) return next;
+    return mode.value === "loop-all" && queue.value.length >= 2 ? 0 : null;
+  }
+
+  /** 剩余时长进入提前量窗口时，解析下一首直链并交给引擎预加载 */
+  async function maybePreload(): Promise<void> {
+    if (preload || duration.value <= 0) return;
+    if (currentTime.value < duration.value - PRELOAD_AHEAD_SEC) return;
+    const index = nextAutoIndex();
+    if (index == null) return;
+    const item = queue.value[index];
+    if (!item) return;
+    preload = { index, url: "" };
+    try {
+      const result = await plugins.getSongUrl(item.track);
+      if (!preload || preload.index !== index) return; // 期间被重置
+      preload.url = result.url;
+      engine.preload(result.url);
+    } catch {
+      preload = null; // 解析失败：放弃预加载，播完走 ended 回退换曲
+    }
+  }
+
+  /** 丢弃预加载状态（可选通知引擎；load/stop 本身会清理后端预加载槽） */
+  function resetPreload(cancelRemote = false): void {
+    preload = null;
+    if (cancelRemote) engine.cancelPreload();
+  }
+
+  /** 引擎已衔接至预加载曲目：切换曲目元数据（音频由引擎无缝续接） */
+  function handleAdvanced(url: string): void {
+    const pending = preload;
+    preload = null;
+    if (!pending || pending.url !== url) return;
+    const item = queue.value[pending.index];
+    if (!item) return;
+    currentIndex.value = pending.index;
+    loadedTrackKey = trackUid(item.track);
+    currentTime.value = 0;
+    duration.value = item.track.duration ? item.track.duration / 1000 : 0;
+    playing.value = true;
+    loading.value = false;
+    void fetchLyrics(item.track);
+    persistQueue();
+  }
+
   function handleEnded(): void {
     if (mode.value === "loop-one") {
       // 原生引擎解码线程 emit ended 后即退出，seek(0) 无法复活会话，
@@ -336,6 +400,7 @@ export const usePlayerStore = defineStore("player", () => {
   /** 切换播放模式；进入随机时备份并打乱，离开随机时恢复原始顺序 */
   function setMode(next: PlayMode): void {
     if (next === mode.value) return;
+    resetPreload(true); // 下一曲映射可能改变，丢弃已预加载的曲目
     const from = mode.value;
     mode.value = next;
     if (next === "shuffle") {
@@ -358,6 +423,7 @@ export const usePlayerStore = defineStore("player", () => {
   function removeFromQueue(uid: string): void {
     const index = queue.value.findIndex((item) => item.uid === uid);
     if (index < 0) return;
+    resetPreload(true); // 队列变动后下一曲可能不再是预加载目标
     queue.value.splice(index, 1);
     // 随机模式下同步移除备份中的对应条目
     const backupIndex = originalQueue.value.findIndex((item) => item.uid === uid);
@@ -383,6 +449,7 @@ export const usePlayerStore = defineStore("player", () => {
     originalQueue.value = [];
     currentIndex.value = -1;
     loadedTrackKey = null;
+    resetPreload();
     engine.stop();
     playing.value = false;
     lyrics.value = [];
@@ -393,6 +460,7 @@ export const usePlayerStore = defineStore("player", () => {
     if (from === to || from < 0 || to < 0 || from >= queue.value.length || to >= queue.value.length) {
       return;
     }
+    resetPreload(true); // 重排后下一曲可能不再是预加载目标
     const currentItemUid = currentTrack.value ? queue.value[currentIndex.value]?.uid : null;
     const [item] = queue.value.splice(from, 1);
     queue.value.splice(to, 0, item);

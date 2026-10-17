@@ -5,6 +5,7 @@ import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getSetting, setSetting } from "@/services/db";
 import { getAudioEngine } from "@/services/audio";
+import { useIsMobile } from "@/composables/useIsMobile";
 import { clearDataCache } from "@/services/cache";
 import { applyWindowMaterial, type WindowMaterial } from "@/services/windowMaterial";
 import {
@@ -52,6 +53,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const eqPreset = ref("flat");
   /** 均衡器 10 段增益（dB） */
   const eqGains = ref<number[]>([...FLAT_GAINS]);
+  /** 横向淡入淡出（Crossfade）开关；关闭后自动切歌仍无缝衔接（Gapless）。移动端仅 Gapless */
+  const crossfadeEnabled = ref(true);
   /** 全局字体（CSS font-family 值，空串 = 使用默认字体） */
   const fontFamily = ref("");
   /** 窗口材质：Mica / Acrylic / 关闭（仅 Windows 桌面生效，其余平台 no-op） */
@@ -121,6 +124,8 @@ export const useSettingsStore = defineStore("settings", () => {
     eqEnabled.value = await getSetting<boolean>("settings.eqEnabled", false);
     eqPreset.value = await getSetting<string>("settings.eqPreset", "flat");
     eqGains.value = await getSetting<number[]>("settings.eqGains", [...FLAT_GAINS]);
+    crossfadeEnabled.value = await getSetting<boolean>("settings.crossfadeEnabled", true);
+    applyCrossfade();
     fontFamily.value = await getSetting<string>("settings.fontFamily", "");
     windowMaterial.value = await getSetting<WindowMaterial>("settings.windowMaterial", "mica");
     coverAccent.value = await getSetting<boolean>("settings.coverAccent", false);
@@ -235,6 +240,19 @@ export const useSettingsStore = defineStore("settings", () => {
     await setSetting("settings.sourceSearchFormat", value);
   }
 
+  /* ------------------------------ 无缝播放 ------------------------------ */
+
+  /** 同步淡入淡出配置到引擎；移动端仅 Gapless（始终关闭 crossfade） */
+  function applyCrossfade(): void {
+    getAudioEngine().setCrossfade(!useIsMobile() && crossfadeEnabled.value, 6.0);
+  }
+
+  async function setCrossfadeEnabled(value: boolean): Promise<void> {
+    crossfadeEnabled.value = value;
+    applyCrossfade();
+    await setSetting("settings.crossfadeEnabled", value);
+  }
+
   /* ------------------------------ 均衡器 ------------------------------ */
 
   function applyEq(): void {
@@ -303,6 +321,7 @@ export const useSettingsStore = defineStore("settings", () => {
     eqEnabled,
     eqPreset,
     eqGains,
+    crossfadeEnabled,
     loaded,
     load,
     setTheme,
@@ -320,6 +339,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setLastUpdateCheckAt,
     setSourcePreference,
     setSourceSearchFormat,
+    setCrossfadeEnabled,
     setEqEnabled,
     setEqPreset,
     setEqGains,

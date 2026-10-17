@@ -15,6 +15,8 @@ export interface AudioEngineEvents {
   timeupdate: (currentTime: number, duration: number) => void;
   durationchange: (duration: number) => void;
   ended: () => void;
+  /** 已无缝衔接至预加载曲目（crossfade 起点 / gapless 衔接点），携带预加载 URL */
+  advanced: (url: string) => void;
   error: (message: string) => void;
   playing: () => void;
   paused: () => void;
@@ -96,6 +98,10 @@ export class AudioEngine {
         }
       });
       await on("player://ended", () => this.emit("ended"));
+      await on("player://advanced", (payload) => {
+        const url = (payload as { url?: string }).url;
+        this.emit("advanced", typeof url === "string" ? url : "");
+      });
       await on("player://error", (payload) => {
         const message = (payload as { message?: string }).message ?? "播放出错";
         this._paused = true;
@@ -192,6 +198,24 @@ export class AudioEngine {
   setEq(enabled: boolean, gains: number[]): void {
     if (!this.inTauri) return;
     void invoke("player_set_eq", { enabled, gains }).catch(() => {});
+  }
+
+  /** 预加载下一首（后端并行解码，衔接时机由引擎决定） */
+  preload(src: string): void {
+    if (!this.inTauri) return;
+    void invoke("player_preload", { url: src }).catch(() => {});
+  }
+
+  /** 丢弃预加载（队列/模式变更导致预载目标失效时） */
+  cancelPreload(): void {
+    if (!this.inTauri) return;
+    void invoke("player_cancel_preload").catch(() => {});
+  }
+
+  /** 横向淡入淡出配置（关闭后自动切歌仍走 Gapless 无缝衔接） */
+  setCrossfade(enabled: boolean, seconds: number): void {
+    if (!this.inTauri) return;
+    void invoke("player_set_crossfade", { enabled, seconds }).catch(() => {});
   }
 
   on<K extends EventName>(event: K, listener: AudioEngineEvents[K]): () => void {
