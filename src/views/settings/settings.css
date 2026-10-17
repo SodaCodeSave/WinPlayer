@@ -1,0 +1,66 @@
+/*
+ * 设置页各分类组件共享的卡片样式。
+ * 由 SettingsView.vue 全局引入一次（分类组件内使用 scoped 会互相隔离，
+ * 因此统一定义为全局类，类名以 settings- / card- 前缀避免污染）。
+ */
+
+.settings-section {
+  margin-bottom: var(--space-3xl);
+}
+
+.settings-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 var(--space-lg) 0;
+}
+
+.settings-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  padding: var(--space-xl);
+  background: var(--wp-card);
+  border: 1px solid var(--wp-control-stroke);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-md);
+}
+
+.settings-card.column {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-header {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.card-description {
+  font-size: 12px;
+  color: var(--wp-text-secondary);
+  margin-top: var(--space-sm);
+  line-height: 1.6;
+}
+
+.card-control {
+  width: 160px;
+  flex: none;
+}
+
+.small {
+  height: 28px;
+  font-size: 12px;
+  padding: 0 12px;
+  flex: none;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -43,6 +43,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const eqPreset = ref("flat");
   /** 均衡器 10 段增益（dB） */
   const eqGains = ref<number[]>([...FLAT_GAINS]);
+  /** 全局字体（CSS font-family 值，空串 = 使用默认字体） */
+  const fontFamily = ref("");
   const loaded = ref(false);
 
   /** 系统配色查询：winuionweb 的暗色控件变量只认 html 上的 theme-dark 类，
@@ -63,8 +65,20 @@ export const useSettingsStore = defineStore("settings", () => {
     if (theme.value === "system") applyTheme();
   });
 
+  /** 将自定义字体覆盖到全局字体变量；空值移除覆盖回退到 tokens 默认 */
+  function applyFont(): void {
+    const root = document.documentElement;
+    const value = fontFamily.value.trim();
+    if (value) {
+      root.style.setProperty("--font-family-display", value);
+    } else {
+      root.style.removeProperty("--font-family-display");
+    }
+  }
+
   // 首次创建即应用（设置尚未从数据库加载时的默认值）
   applyTheme();
+  applyFont();
 
   async function load(): Promise<void> {
     theme.value = await getSetting<ThemePreference>("settings.theme", "system");
@@ -82,7 +96,9 @@ export const useSettingsStore = defineStore("settings", () => {
     eqEnabled.value = await getSetting<boolean>("settings.eqEnabled", false);
     eqPreset.value = await getSetting<string>("settings.eqPreset", "flat");
     eqGains.value = await getSetting<number[]>("settings.eqGains", [...FLAT_GAINS]);
+    fontFamily.value = await getSetting<string>("settings.fontFamily", "");
     applyTheme();
+    applyFont();
     // 启动时把均衡器配置应用到原生引擎
     applyEq();
     loaded.value = true;
@@ -92,6 +108,12 @@ export const useSettingsStore = defineStore("settings", () => {
     theme.value = value;
     applyTheme();
     await setSetting("settings.theme", value);
+  }
+
+  async function setFontFamily(value: string): Promise<void> {
+    fontFamily.value = value;
+    applyFont();
+    await setSetting("settings.fontFamily", value);
   }
 
   async function setMarketSources(value: MarketSource[]): Promise<void> {
@@ -169,6 +191,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   return {
     theme,
+    fontFamily,
     marketSources,
     githubMirror,
     smtcEnabled,
@@ -183,6 +206,7 @@ export const useSettingsStore = defineStore("settings", () => {
     loaded,
     load,
     setTheme,
+    setFontFamily,
     setMarketSources,
     setGithubMirror,
     setSmtcEnabled,
