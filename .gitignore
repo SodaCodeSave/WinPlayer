@@ -51,10 +51,9 @@ plugins/*.zip
 src/assets/fonts/*.ttf
 
 .editorconfig
-# 依赖锁文件不入库（应用与 vendored 子 crate 的 Cargo.lock 均按此忽略）
+# 依赖锁文件不入库（vendored 子 crate 的 Cargo.lock 按此忽略）
 Cargo.lock
 
 .trae/
 
 TODO.md
-pnpm-lock.yaml
