@@ -12,6 +12,7 @@
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
+    "android:icons": "node scripts/apply-android-icons.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

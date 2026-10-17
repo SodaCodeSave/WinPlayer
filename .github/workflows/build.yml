@@ -195,6 +195,12 @@ jobs:
         if: hashFiles('src-tauri/gen/android/**') == ''
         run: pnpm tauri android init
 
+      # Tauri 的 android 模板自带「默认启动图标」，`tauri android init` 只会解压模板，
+      # 不会用 src-tauri/icons/android 覆盖它（仅 `tauri icon` 在后端工程已存在时才写入
+      # gen/android/app/src/main/res）。所以必须在此手动同步，否则 APK 永远显示默认图标。
+      - name: Apply Android launcher icons
+        run: pnpm android:icons
+
       # Tauri 模板的 buildSrc 走默认 Gradle Plugin Portal 解析 kotlin-dsl
       # 的传递依赖（kotlin-stdlib 等），portal 对最新 kotlin 版本常未同步
       # 导致 "Could not find org.jetbrains.kotlin:kotlin-stdlib:2.x"；
