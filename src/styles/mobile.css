@@ -169,3 +169,41 @@
   flex: 1;
   font-size: 24px;
 }
+
+/* ------------------------------ 触摸目标尺寸 ------------------------------ */
+/* 移动端把常用控件的最小可点面积提到约 44px：WinUI 桌面尺寸偏小，手指容易点错。
+   全部以 .app-shell.is-mobile 限定，桌面端完全不受影响。 */
+.app-shell.is-mobile .wp-icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+/* 强调 / 标准按钮（播放全部等）加高一点 */
+.app-shell.is-mobile .wp-accent-button,
+.app-shell.is-mobile .wp-standard-button {
+  height: 40px;
+}
+
+/* 吸顶返回栏的返回键 */
+.app-shell.is-mobile .mobile-page-header .back-button {
+  width: 44px;
+  height: 44px;
+}
+
+/* 搜索页类型标签 / 「播放全部」 */
+.app-shell.is-mobile .tab,
+.app-shell.is-mobile .tab-action {
+  min-height: 44px;
+}
+
+/* 歌曲行里的操作按钮 */
+.app-shell.is-mobile .song-table.is-mobile .row-action {
+  width: 44px;
+  height: 44px;
+}
+
+/* 「我的」页新建 / 同步按钮 */
+.app-shell.is-mobile .add-button {
+  width: 40px;
+  height: 40px;
+}

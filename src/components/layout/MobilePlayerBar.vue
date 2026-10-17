@@ -497,9 +497,14 @@ function onProgressUp(event: PointerEvent): void {
 .full-progress-track {
   position: relative;
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--wp-control-fill-secondary);
+  /* 可见线只有 4px，但把整体高度撑到 24px 方便手指点按；
+     背景只在正中画 4px 的线（border-box 下 padding 吃掉多余高度）。 */
+  height: 24px;
+  padding: 10px 0;
+  background-image: linear-gradient(var(--wp-control-fill-secondary), var(--wp-control-fill-secondary));
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 4px;
   cursor: pointer;
   /* 拖动进度条时不触发页面滚动 */
   touch-action: none;
