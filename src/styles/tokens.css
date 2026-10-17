@@ -29,6 +29,11 @@
   --sidenav-width: 232px;
   --playerbar-height: 92px;
 
+  /* 移动端安全区（状态栏 / 导航栏 / 刘海）
+     桌面端 env() 返回 0，不影响布局 */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+
   /* 动效 */
   --duration-fast: 120ms;
   --duration-normal: 200ms;

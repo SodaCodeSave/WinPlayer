@@ -44,7 +44,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'is-mobile': isMobile }">
     <TitleBar v-if="!isMobile" class="app-titlebar" />
     <div class="app-body">
       <SideNav v-if="!isMobile" class="app-sidenav" />
@@ -73,6 +73,11 @@ onUnmounted(() => {
   height: 100%;
   background: var(--wp-base);
   color: var(--wp-text-primary);
+}
+
+/* 移动端：为顶部状态栏 / 刘海留出安全区（桌面端不生效） */
+.app-shell.is-mobile {
+  padding-top: var(--safe-area-top);
 }
 
 .app-titlebar {

@@ -245,7 +245,9 @@ const progressPercent = computed(() =>
   flex-direction: column;
   background: var(--wp-base);
   z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom);
+  /* 全屏浮层脱离 app-shell 内边距：自行避开状态栏与底部导航栏 */
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
 }
 
 .full-fade-enter-active,

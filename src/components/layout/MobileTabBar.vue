@@ -41,8 +41,8 @@ const tabs: TabItem[] = [
   align-items: stretch;
   background: var(--wp-layer-solid);
   border-top: 1px solid var(--wp-divider);
-  /* iOS 底部安全区 */
-  padding-bottom: env(safe-area-inset-bottom);
+  /* iOS/Android 底部安全区 */
+  padding-bottom: var(--safe-area-bottom);
   z-index: 30;
 }
 
