@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { ref } from "vue";
+import { useAutoCenter } from "@/composables/useAutoCenter";
 import { usePlayerStore } from "@/stores/player";
 
 const player = usePlayerStore();
 const listRef = ref<HTMLElement | null>(null);
 
-/** 当前歌词行居中滚动 */
-watch(
-  () => player.lyricIndex,
-  async (index) => {
-    if (index < 0 || !player.showLyrics) return;
-    await nextTick();
-    const container = listRef.value;
-    const line = container?.children[index] as HTMLElement | undefined;
-    if (container && line) {
-      const target = line.offsetTop - container.clientHeight / 2 + line.clientHeight / 2;
-      container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
-    }
-  },
-);
+// 当前歌词行自动居中；用户手动滚动后延迟回正
+useAutoCenter({
+  container: listRef,
+  itemSelector: ".lrc-line",
+  getIndex: () => player.lyricIndex,
+  isActive: () => player.showLyrics,
+});
 </script>
 
 <template>

@@ -4,8 +4,9 @@
  * - 未播放任何歌曲时整体隐藏
  * - 点击迷你条打开全屏页（封面 / 歌词 / 播放控制），点击行歌词跳转进度
  */
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import CachedImage from "@/components/common/CachedImage.vue";
+import { useAutoCenter } from "@/composables/useAutoCenter";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { formatTime, trackArtist, trackTitle } from "@/types/player";
@@ -25,22 +26,15 @@ function openFull() {
   if (player.currentTrack) showFull.value = true;
 }
 
-/** 全屏页歌词当前行居中滚动（与 LyricsPanel 一致） */
+/** 全屏页歌词当前行自动居中；用户手动滚动后延迟回正 */
 const listRef = ref<HTMLElement | null>(null);
 
-watch(
-  () => player.lyricIndex,
-  async (index) => {
-    if (index < 0 || !showFull.value) return;
-    await nextTick();
-    const container = listRef.value;
-    const line = container?.children[index] as HTMLElement | undefined;
-    if (container && line) {
-      const target = line.offsetTop - container.clientHeight / 2 + line.clientHeight / 2;
-      container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
-    }
-  },
-);
+useAutoCenter({
+  container: listRef,
+  itemSelector: ".full-lrc-line",
+  getIndex: () => player.lyricIndex,
+  isActive: () => showFull.value,
+});
 
 const progressPercent = computed(() =>
   player.duration > 0 ? Math.min(100, (player.currentTime / player.duration) * 100) : 0,

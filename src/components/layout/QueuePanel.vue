@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
+import { useAutoCenter } from "@/composables/useAutoCenter";
 import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
 import { openPlaylistPicker } from "@/services/playlistPicker";
 import { copyText } from "@/services/clipboard";
@@ -12,6 +13,16 @@ import type { UnifiedTrack } from "@/types/plugin";
 const player = usePlayerStore();
 const library = useLibraryStore();
 const plugins = usePluginsStore();
+
+const bodyRef = ref<HTMLElement | null>(null);
+
+// 当前播放项自动居中；用户手动滚动后延迟回正
+useAutoCenter({
+  container: bodyRef,
+  itemSelector: ".queue-item",
+  getIndex: () => player.currentIndex,
+  isActive: () => player.showQueue,
+});
 
 const canAddToPlaylist = computed(
   () =>
@@ -79,7 +90,7 @@ function openItemMenu(track: UnifiedTrack, uid: string, event: MouseEvent) {
         <button v-if="player.queue.length" class="panel-action" @click="player.clearQueue">清空</button>
       </div>
 
-      <div class="panel-body">
+      <div ref="bodyRef" class="panel-body">
         <div v-if="!player.queue.length" class="panel-empty">队列为空，去发现音乐吧</div>
         <ul v-else class="queue-list">
           <li
