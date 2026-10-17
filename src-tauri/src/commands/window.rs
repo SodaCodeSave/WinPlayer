@@ -14,6 +14,7 @@ use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_mica};
 /// Mica 仅 Windows 11 支持：请求 Mica 失败时自动回退 Acrylic，再失败回退
 /// 不透明纯色背景。dark 传 None 时材质跟随系统亮暗偏好。
 /// 返回实际生效的材质（"mica" / "acrylic" / "none"），前端据此切换 CSS。
+#[cfg(windows)]
 #[tauri::command]
 pub fn window_set_material(
     window: tauri::Window,
