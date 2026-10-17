@@ -4,6 +4,7 @@ import { WinUIOnWeb } from "winuionweb";
 import "winuionweb/style.css";
 import "@/styles/tokens.css";
 import "@/styles/global.css";
+import "@/styles/mobile.css";
 import App from "./App.vue";
 import router from "./router";
 

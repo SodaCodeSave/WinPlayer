@@ -64,3 +64,92 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ================================================================================
+   移动端布局（仅作用于带 .mobile 类的设置页根节点 .settings-page.mobile）。
+   核心问题：桌面端卡片是「文字 + 固定宽度控件」的横向行，窄屏会把控件挤出边界。
+   这里让宽控件（下拉框 / 输入框）自动换到下一行并占满整行。
+   ================================================================================ */
+
+.settings-page.mobile {
+  padding: var(--space-xl) var(--space-lg) var(--space-2xl);
+}
+
+.settings-page.mobile .wp-page-header {
+  margin-bottom: var(--space-lg);
+}
+
+.settings-page.mobile .wp-page-title {
+  font-size: 24px;
+}
+
+.settings-page.mobile .settings-section {
+  margin-bottom: var(--space-2xl);
+}
+
+/* 顶部横向分类 Tab：全宽可滚动，礼貌地贴到屏幕两侧 */
+.settings-page.mobile .settings-tabs {
+  margin-left: calc(-1 * var(--space-lg));
+  margin-right: calc(-1 * var(--space-lg));
+  padding-left: var(--space-lg);
+  padding-right: var(--space-lg);
+}
+
+/* 普通卡片：允许换行，文字占一行，宽控件落到下一行 */
+.settings-page.mobile .settings-card {
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+.settings-page.mobile .settings-card:not(.column) {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.settings-page.mobile .settings-card:not(.column) > .card-content {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+/* 下拉框 / 输入框占满整行（覆盖桌面端的固定宽度） */
+.settings-page.mobile .card-control,
+.settings-page.mobile .font-input,
+.settings-page.mobile .format-input {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+/* 插件市场：镜像源编辑行整行；输入框自适应剩余宽度 */
+.settings-page.mobile .mirror-edit {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+.settings-page.mobile .mirror-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* 插件市场：新增市场源（名称 / 地址 / 添加）改为竖排 */
+.settings-page.mobile .source-add {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.settings-page.mobile .source-input,
+.settings-page.mobile .source-input.grow {
+  flex: none;
+  width: 100%;
+}
+
+/* 关于页：更新按钮整行并可换行 */
+.settings-page.mobile .update-actions {
+  flex: 1 1 100%;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.settings-page.mobile .update-actions .wp-standard-button {
+  flex: 1 1 auto;
+}

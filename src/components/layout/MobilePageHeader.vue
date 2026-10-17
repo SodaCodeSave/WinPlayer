@@ -19,14 +19,17 @@ const isMobile = useIsMobile();
 </template>
 
 <style scoped>
-/* 反向吃掉 wp-page 的内边距，形成通顶吸顶栏 */
+/* 通顶吸顶栏。
+   页面（.wp-page.is-mobile）顶部没有内边距，因此这里不需要负的上边距：
+   栏的静态位置就是滚动区顶部，吸顶时不会出现上下漏出内容的问题。
+   横向用负边距抵消页面左右内边距，让背景铺满整屏。 */
 .mobile-page-header {
   position: sticky;
   top: 0;
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  margin: calc(-1 * var(--space-2xl)) calc(-1 * var(--space-3xl)) var(--space-xl);
+  margin: 0 calc(-1 * var(--page-pad-x, var(--space-3xl))) var(--space-lg);
   padding: var(--space-sm) var(--space-md);
   background: var(--wp-base);
   border-bottom: 1px solid var(--wp-divider);

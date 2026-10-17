@@ -15,12 +15,15 @@ import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import MediaCard from "@/components/common/MediaCard.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import { useIsMobile } from "@/composables/useIsMobile";
 import type { UnifiedAlbum, UnifiedArtist, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
 const router = useRouter();
 const player = usePlayerStore();
 const plugins = usePluginsStore();
+/** 移动端判定：用于挂 .is-mobile 类，切换移动端布局 */
+const isMobile = useIsMobile();
 
 const sourceId = computed(() => String(route.params.source ?? ""));
 const artistId = computed(() => String(route.params.id ?? ""));
@@ -137,7 +140,7 @@ function shufflePlay() {
 </script>
 
 <template>
-  <div class="wp-page">
+  <div class="wp-page" :class="{ 'is-mobile': isMobile }">
     <MobilePageHeader />
     <template v-if="artist">
       <div class="artist-banner" :class="{ 'no-avatar': !artist.avatar }" :style="bannerStyle">

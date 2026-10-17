@@ -19,6 +19,8 @@
 
 * {
   box-sizing: border-box;
+  /* 关闭移动端点击时系统默认的蓝色高亮层（桌面端无此效果，不影响） */
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,

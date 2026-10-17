@@ -1,0 +1,151 @@
+/**
+ * 移动端详情页布局（仅当页面根节点带 .is-mobile 时生效，桌面端完全不受影响）。
+ * .is-mobile 由 PlaylistView / AlbumView / ArtistView / LikedView / SearchView
+ * 根据 useIsMobile() 挂到 .wp-page 上。
+ *
+ * 说明：这里的选择器（.wp-page.is-mobile .xxx，权重 0,3,0）会覆盖各组件
+ * scoped 样式（.xxx[data-v-xxx]，权重 0,2,0），因此可以安全地覆写尺寸与排布。
+ */
+
+/* ------------------------------ 页面容器 ------------------------------ */
+/* 顶部内边距交给吸顶返回栏自己处理（见 MobilePageHeader.vue）：
+   栏自身没有负的上边距，天然贴合滚动区顶部，杜绝吸顶时上下漏出内容。 */
+.wp-page.is-mobile {
+  --page-pad-x: var(--space-lg);
+  padding: 0 var(--page-pad-x) var(--space-2xl);
+}
+
+/* ------------------------------ 详情页头部 ------------------------------ */
+/* 封面居中在上，标题 / 数量 / 简介 / 操作按钮依次纵向排列 */
+.wp-page.is-mobile .wp-page-header {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.wp-page.is-mobile .header-cover {
+  width: 140px;
+  height: 140px;
+}
+
+.wp-page.is-mobile .header-cover .wp-icon {
+  font-size: 56px;
+}
+
+.wp-page.is-mobile .header-meta {
+  flex: none;
+  width: 100%;
+}
+
+.wp-page.is-mobile .wp-page-title {
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+
+.wp-page.is-mobile .header-sub {
+  font-size: 13px;
+}
+
+.wp-page.is-mobile .header-sub-actions {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.wp-page.is-mobile .source-badge {
+  display: block;
+  text-align: center;
+}
+
+/* 播放全部 / 随机播放：两个按钮等宽平分整行 */
+.wp-page.is-mobile .header-actions {
+  width: 100%;
+  margin-top: var(--space-sm);
+}
+
+.wp-page.is-mobile .header-actions .wp-accent-button,
+.wp-page.is-mobile .header-actions .wp-standard-button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* 简介：默认折叠两行 + 展开按钮 */
+.wp-page.is-mobile .header-desc-wrap {
+  width: 100%;
+  max-width: 100%;
+  margin-top: var(--space-md);
+  text-align: center;
+}
+
+.wp-page.is-mobile .header-desc {
+  text-align: center;
+}
+
+/* ------------------------------ 搜索页头部 ------------------------------ */
+/* 搜索框需要占满整行，因此不居中，改为拉伸排布 */
+.wp-page.is-mobile .search-header {
+  align-items: stretch;
+  text-align: left;
+}
+
+.wp-page.is-mobile .search-header .wp-page-title {
+  text-align: left;
+}
+
+.wp-page.is-mobile .search-header .search-field {
+  max-width: none;
+  width: 100%;
+}
+
+.wp-page.is-mobile .search-header .wp-accent-button {
+  justify-content: center;
+}
+
+/* ------------------------------ 歌手页横幅 ------------------------------ */
+.wp-page.is-mobile .banner-content {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-lg);
+  min-height: 0;
+  padding: var(--space-xl) var(--space-lg);
+}
+
+.wp-page.is-mobile .banner-avatar,
+.wp-page.is-mobile .banner-avatar-placeholder {
+  width: 96px;
+  height: 96px;
+}
+
+.wp-page.is-mobile .banner-avatar-placeholder {
+  font-size: 40px;
+}
+
+.wp-page.is-mobile .banner-title {
+  font-size: 24px;
+}
+
+.wp-page.is-mobile .banner-desc {
+  max-width: 100%;
+}
+
+.wp-page.is-mobile .banner-actions {
+  flex-direction: row;
+  width: 100%;
+}
+
+.wp-page.is-mobile .banner-actions .wp-accent-button,
+.wp-page.is-mobile .banner-actions .wp-standard-button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* ------------------------------ 卡片网格 ------------------------------ */
+.wp-page.is-mobile .album-grid,
+.wp-page.is-mobile .media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--space-sm);
+}

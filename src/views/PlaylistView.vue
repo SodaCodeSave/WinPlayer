@@ -18,6 +18,7 @@ import SongTable from "@/components/common/SongTable.vue";
 import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import { useIsMobile } from "@/composables/useIsMobile";
 import type { PlaylistDetail, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
@@ -25,6 +26,8 @@ const router = useRouter();
 const library = useLibraryStore();
 const player = usePlayerStore();
 const plugins = usePluginsStore();
+/** 移动端判定：用于挂 .is-mobile 类，切换移动端布局 */
+const isMobile = useIsMobile();
 
 /** 插件来源歌单：路由名固定为 sourcePlaylist，多带一段 source */
 const isRemote = computed(() => route.name === "sourcePlaylist");
@@ -49,6 +52,8 @@ const tracks = ref<UnifiedTrack[]>([]);
 const loading = ref(false);
 const loadError = ref("");
 const renameValue = ref("");
+/** 简介是否展开（默认折叠两行，避免长简介撑爆头部） */
+const descExpanded = ref(false);
 
 /** ContentDialog 通过 ShowAsync() 打开（库没有 IsOpen prop） */
 interface DialogRef {
@@ -122,6 +127,7 @@ async function loadRoute() {
   remote.value = null;
   tracks.value = [];
   fromCache.value = false;
+  descExpanded.value = false;
 
   if (isRemote.value) {
     const source = String(route.params.source ?? "");
@@ -189,7 +195,7 @@ async function openDelete() {
 </script>
 
 <template>
-  <div class="wp-page">
+  <div class="wp-page" :class="{ 'is-mobile': isMobile }">
     <MobilePageHeader />
     <template v-if="header">
       <div class="wp-page-header">
@@ -201,7 +207,15 @@ async function openDelete() {
           <h1 class="wp-page-title">{{ header.name }}</h1>
           <div class="header-sub">
             {{ header.sub }}
-            <span v-if="header.description" class="header-desc"> · {{ header.description }}</span>
+            <span v-if="header.description && !isMobile" class="header-desc-inline">
+              · {{ header.description }}
+            </span>
+          </div>
+          <div v-if="header.description && isMobile" class="header-desc-wrap">
+            <p class="header-desc" :class="{ expanded: descExpanded }">{{ header.description }}</p>
+            <button class="wp-standard-button small desc-toggle" @click="descExpanded = !descExpanded">
+              {{ descExpanded ? "收起" : "展开简介" }}
+            </button>
           </div>
           <div class="header-sub-actions">
             <template v-if="!isRemote">
@@ -320,10 +334,43 @@ async function openDelete() {
   margin-top: var(--space-sm);
 }
 
-/* 描述可能很长，限制行数避免撑爆头部 */
-.header-desc {
+/* 桌面端：简介作为一行内联文本跟随数量显示（保持原有排版） */
+.header-desc-inline {
   display: inline;
   word-break: break-all;
+}
+
+/* 手机端：简介默认折叠两行，避免长文本撑爆头部 */
+.header-desc-wrap {
+  margin-top: var(--space-md);
+  max-width: 720px;
+}
+
+.header-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--wp-text-tertiary);
+  white-space: pre-line;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.header-desc.expanded {
+  -webkit-line-clamp: unset;
+  display: block;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.desc-toggle {
+  height: 24px;
+  font-size: 11px;
+  padding: 0 10px;
+  margin-top: var(--space-sm);
 }
 
 .header-sub-actions {

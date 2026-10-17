@@ -9,12 +9,15 @@ import PlaylistCard from "@/components/common/PlaylistCard.vue";
 import MediaCard from "@/components/common/MediaCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { ProgressRing } from "winuionweb";
+import { useIsMobile } from "@/composables/useIsMobile";
 import type { SearchResult, UnifiedAlbum, UnifiedArtist, UnifiedPlaylist, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
 const router = useRouter();
 const plugins = usePluginsStore();
 const player = usePlayerStore();
+/** 移动端判定：用于挂 .is-mobile 类，切换移动端布局 */
+const isMobile = useIsMobile();
 
 type TabType = "song" | "playlist" | "album" | "artist";
 /** 专辑 / 歌手这两个 Tab 是按需拉取的，只有点开时才发请求 */
@@ -137,7 +140,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="wp-page">
+  <div class="wp-page" :class="{ 'is-mobile': isMobile }">
     <MobilePageHeader />
     <div class="wp-page-header search-header">
       <h1 class="wp-page-title">搜索</h1>

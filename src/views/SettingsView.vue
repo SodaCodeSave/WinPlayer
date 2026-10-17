@@ -260,6 +260,7 @@ watch(activeTab, async () => {
 
 .settings-page.mobile .settings-layout {
   flex-direction: column;
+  align-items: stretch;
   gap: var(--space-lg);
 }
 

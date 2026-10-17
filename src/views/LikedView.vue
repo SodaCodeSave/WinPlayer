@@ -5,10 +5,13 @@ import { usePlayerStore } from "@/stores/player";
 import SongTable from "@/components/common/SongTable.vue";
 import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import { useIsMobile } from "@/composables/useIsMobile";
 
 const router = useRouter();
 const library = useLibraryStore();
 const player = usePlayerStore();
+/** 移动端判定：用于挂 .is-mobile 类，切换移动端布局 */
+const isMobile = useIsMobile();
 
 function playAll() {
   if (library.likedTracks.length) void player.playTracks(library.likedTracks, 0);
@@ -25,7 +28,7 @@ function shufflePlay() {
 </script>
 
 <template>
-  <div class="wp-page">
+  <div class="wp-page" :class="{ 'is-mobile': isMobile }">
     <MobilePageHeader />
     <template v-if="library.liked.length">
       <div class="wp-page-header">

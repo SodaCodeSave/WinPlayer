@@ -4,6 +4,7 @@
  */
 import { computed } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
+import { useIsMobile } from "@/composables/useIsMobile";
 import { usePlayerStore } from "@/stores/player";
 import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
@@ -38,6 +39,8 @@ const player = usePlayerStore();
 const library = useLibraryStore();
 const plugins = usePluginsStore();
 const router = useRouter();
+/** 移动端判定：决定走卡片式两行布局、单击播放等交互 */
+const isMobile = useIsMobile();
 
 /** 歌手/专辑名是否能跳转，取决于插件有没有回传对应的 id */
 interface CellLink {
@@ -84,6 +87,11 @@ const rows = computed(() =>
 
 function playRow(index: number) {
   void player.playTracks(props.tracks, index);
+}
+
+/** 移动端没有双击，单击整行即播放（桌面端仍保持双击播放） */
+function onRowClick(index: number) {
+  if (isMobile) playRow(index);
 }
 
 function go(target: RouteLocationRaw) {
@@ -165,7 +173,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
 </script>
 
 <template>
-  <div class="song-table">
+  <div class="song-table" :class="{ 'is-mobile': isMobile }">
     <div class="table-header">
       <span class="col-index">#</span>
       <span class="col-title">标题</span>
@@ -183,6 +191,7 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       :key="row.key"
       class="table-row"
       :class="{ playing: row.playing }"
+      @click="onRowClick(index)"
       @dblclick="playRow(index)"
       @contextmenu="openRowMenu(row.track, $event)"
     >
@@ -193,6 +202,9 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       </span>
       <span class="col-title">
         <CachedImage v-if="row.track.cover" :src="row.track.cover" class="row-cover" />
+        <span v-else-if="isMobile" class="row-cover row-cover-placeholder">
+          <span class="wp-icon">&#xE852;</span>
+        </span>
         <span class="title-main">
           <span class="title-text ellipsis">{{ trackTitle(row.track) }}</span>
           <span v-if="row.track.alias" class="title-alias ellipsis">（{{ row.track.alias }}）</span>
@@ -229,10 +241,10 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       <span v-if="showSource" class="col-source ellipsis">{{ row.sourceName }}</span>
       <span class="col-actions">
         <button
-          class="row-action"
+          class="row-action like-action"
           :class="{ liked: row.liked }"
           :title="row.liked ? '取消喜欢' : '添加到我喜欢'"
-          @click="toggleLike(row.track)"
+          @click.stop="toggleLike(row.track)"
         >
           <span class="wp-icon" :class="{ filled: row.liked }">{{ row.liked ? "&#xF47E;" : "&#xF47A;" }}</span>
         </button>
@@ -240,18 +252,18 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
           v-if="canAddToPlaylist"
           class="row-action"
           title="添加到歌单"
-          @click="openPlaylistPicker(row.track)"
+          @click.stop="openPlaylistPicker(row.track)"
         >
           <span class="wp-icon">&#xF4EE;</span>
         </button>
-        <button class="row-action" title="添加到播放队列" @click="addSingle(row.track)">
+        <button class="row-action" title="添加到播放队列" @click.stop="addSingle(row.track)">
           <span class="wp-icon">&#xF10A;</span>
         </button>
         <button
           v-if="removable"
           class="row-action danger"
           title="移除"
-          @click="emit('remove', row.track)"
+          @click.stop="emit('remove', row.track)"
         >
           <span class="wp-icon">&#xF34D;</span>
         </button>
@@ -478,5 +490,111 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ------------------------------ 移动端：两行卡片式 ------------------------------ */
+/* 左：封面；中：第一行歌名、第二行歌手；右：喜欢按钮。
+   隐藏序号 / 专辑 / 来源 / 时长列，单击整行即播放。 */
+.song-table.is-mobile .table-header {
+  display: none;
+}
+
+.song-table.is-mobile {
+  gap: 2px;
+}
+
+.song-table.is-mobile .table-row {
+  display: grid;
+  /* 列：封面 | 文本（标题/歌手） | VIP | 操作按钮 */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "cover title vip actions"
+    "cover artist .  actions";
+  align-items: center;
+  column-gap: var(--space-md);
+  row-gap: 2px;
+  height: auto;
+  min-height: 60px;
+  padding: var(--space-md) var(--space-sm);
+  border-radius: var(--radius-md);
+}
+
+.song-table.is-mobile .table-row:active {
+  background: var(--wp-card-active);
+}
+
+.song-table.is-mobile .col-index,
+.song-table.is-mobile .col-album,
+.song-table.is-mobile .col-source,
+.song-table.is-mobile .col-duration {
+  display: none;
+}
+
+/* 让 col-title 的三个子节点（封面 / 标题 / VIP）直接参与外层网格排布，
+   封面才能纵跨「标题 + 歌手」两行，与两行文字整体垂直居中。 */
+.song-table.is-mobile .col-title {
+  display: contents;
+}
+
+.song-table.is-mobile .row-cover {
+  grid-area: cover;
+  align-self: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+}
+
+/* 无封面时用占位块占住位置，保证所有行的标题与歌手左对齐一致 */
+.song-table.is-mobile .row-cover-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: var(--wp-control-fill-secondary);
+  color: var(--wp-text-tertiary);
+  font-size: 18px;
+  overflow: hidden;
+}
+
+.song-table.is-mobile .title-main {
+  grid-area: title;
+}
+
+.song-table.is-mobile .title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 别名在手机端太占地方，只保留主标题（别名仍可在右键/长按菜单里查看） */
+.song-table.is-mobile .title-alias {
+  display: none;
+}
+
+.song-table.is-mobile .title-vip {
+  grid-area: vip;
+}
+
+/* 歌手与标题同属第 2 列，天然左对齐 */
+.song-table.is-mobile .col-artist {
+  grid-area: artist;
+  font-size: 12px;
+}
+
+.song-table.is-mobile .col-actions {
+  grid-area: actions;
+  width: auto;
+  opacity: 1;
+}
+
+.song-table.is-mobile .row-action {
+  width: 36px;
+  height: 36px;
+}
+
+/* 手机端只保留「喜欢」按钮，其余操作走长按菜单，避免挤占空间 */
+.song-table.is-mobile .row-action:not(.like-action) {
+  display: none;
 }
 </style>
