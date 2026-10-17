@@ -158,24 +158,20 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 ///
 /// Upstream 0.2.4 forgot to do this, which made the whole guest-js API
 /// (including the action listener) unusable — fixed here.
-#[cfg(mobile)]
 fn register_commands<R: Runtime>(
     builder: tauri::plugin::Builder<R>,
 ) -> tauri::plugin::Builder<R> {
-    builder.invoke_handler(tauri::generate_handler![
+    // cfg 放在 let 上而不是函数上：rust-analyzer 对 build 脚本注入的
+    // cfg(mobile)/cfg(desktop) 别名支持不完整，函数级门控会误报「找不到函数」
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
         commands::initialize,
         commands::update_state,
         commands::update_timeline,
         commands::clear,
         commands::register_listener,
         commands::remove_listener
-    ])
-}
-
-#[cfg(desktop)]
-fn register_commands<R: Runtime>(
-    builder: tauri::plugin::Builder<R>,
-) -> tauri::plugin::Builder<R> {
+    ]);
     builder
 }
 
