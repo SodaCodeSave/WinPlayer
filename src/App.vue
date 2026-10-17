@@ -10,16 +10,19 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import ToastHost from "@/components/common/ToastHost.vue";
 import ContextMenuHost from "@/components/common/ContextMenuHost.vue";
 import PlaylistPickerHost from "@/components/common/PlaylistPickerHost.vue";
+import ShortcutHost from "@/components/common/ShortcutHost.vue";
 import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { useLibraryStore } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
+import { useShortcutsStore } from "@/stores/shortcuts";
 import { disposeSmtc, initSmtc, setSmtcEnabled } from "@/services/smtc";
 
 const settings = useSettingsStore();
 const plugins = usePluginsStore();
 const library = useLibraryStore();
 const player = usePlayerStore();
+const shortcuts = useShortcutsStore();
 const isMobile = useIsMobile();
 
 // 注册于 load() 之前：设置读出后立即把开关同步给系统媒体控件（SMTC）
@@ -31,7 +34,7 @@ const stopSmtcWatch = watch(
 
 onMounted(async () => {
   await settings.load();
-  await Promise.all([library.loadAll(), player.restore()]);
+  await Promise.all([library.loadAll(), player.restore(), shortcuts.load()]);
   await plugins.loadInstalled();
   initSmtc(player);
 });
@@ -63,6 +66,7 @@ onUnmounted(() => {
     <ToastHost />
     <ContextMenuHost />
     <PlaylistPickerHost />
+    <ShortcutHost />
   </div>
 </template>
 

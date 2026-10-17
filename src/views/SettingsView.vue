@@ -5,6 +5,7 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import GeneralSettings from "@/views/settings/GeneralSettings.vue";
 import StyleSettings from "@/views/settings/StyleSettings.vue";
 import PlaybackSettings from "@/views/settings/PlaybackSettings.vue";
+import KeymapSettings from "@/views/settings/KeymapSettings.vue";
 import PluginSettings from "@/views/settings/PluginSettings.vue";
 import StorageSettings from "@/views/settings/StorageSettings.vue";
 import AboutSettings from "@/views/settings/AboutSettings.vue";
@@ -27,10 +28,16 @@ const CATEGORIES: SettingsCategory[] = [
   { key: "general", label: "通用", icon: "&#xF6AA;", component: GeneralSettings }, // ic_fluent_settings_24_regular
   { key: "style", label: "样式", icon: "&#xF2F6;", component: StyleSettings }, // ic_fluent_color_24_regular（调色板）
   { key: "playback", label: "播放", icon: "&#xE855;", component: PlaybackSettings }, // ic_fluent_music_note_2_24_regular
+  { key: "shortcut", label: "快捷键", icon: "&#xF4B9;", component: KeymapSettings }, // ic_fluent_keyboard_24_regular
   { key: "plugins", label: "插件", icon: "&#xE9EA;", component: PluginSettings }, // ic_fluent_puzzle_piece_24_regular
   { key: "storage", label: "存储", icon: "&#xE467;", component: StorageSettings }, // ic_fluent_database_24_regular
   { key: "about", label: "关于", icon: "&#xF4A4;", component: AboutSettings }, // ic_fluent_info_24_regular
 ];
+
+/** 移动端无物理键盘，隐藏快捷键分类 */
+const categories = computed<SettingsCategory[]>(() =>
+  isMobile ? CATEGORIES.filter((category) => category.key !== "shortcut") : CATEGORIES,
+);
 
 /**
  * 当前选中分类：以路由 query ?tab= 为准（便于其他页面深链到指定分类，
@@ -38,11 +45,12 @@ const CATEGORIES: SettingsCategory[] = [
  */
 const activeTab = computed(() => {
   const tab = String(route.query.tab ?? "");
-  return CATEGORIES.some((category) => category.key === tab) ? tab : CATEGORIES[0].key;
+  const list = categories.value;
+  return list.some((category) => category.key === tab) ? tab : list[0].key;
 });
 
 const activeCategory = computed(
-  () => CATEGORIES.find((category) => category.key === activeTab.value) ?? CATEGORIES[0],
+  () => categories.value.find((category) => category.key === activeTab.value) ?? categories.value[0],
 );
 
 function selectTab(key: string): void {
@@ -115,7 +123,7 @@ watch(activeTab, async () => {
         <span class="nav-pill" :style="pillStyle()" aria-hidden="true" />
         <span class="nav-accent" :style="pillStyle(10)" aria-hidden="true" />
         <button
-          v-for="category in CATEGORIES"
+          v-for="category in categories"
           :key="category.key"
           class="settings-nav-item"
           :class="{ active: category.key === activeTab }"
@@ -130,7 +138,7 @@ watch(activeTab, async () => {
       <!-- 移动端：顶部横向滚动分类 Tab -->
       <nav v-else class="settings-tabs" aria-label="设置分类">
         <button
-          v-for="category in CATEGORIES"
+          v-for="category in categories"
           :key="category.key"
           class="settings-tab-item"
           :class="{ active: category.key === activeTab }"
