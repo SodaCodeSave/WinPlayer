@@ -16,6 +16,7 @@ import MediaCard from "@/components/common/MediaCard.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { useRefreshable } from "@/composables/useRefreshable";
 import type { UnifiedAlbum, UnifiedArtist, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
@@ -112,6 +113,9 @@ watch(
   },
   { immediate: true },
 );
+
+// 下拉刷新：重新拉取歌手详情
+useRefreshable(() => load(sourceId.value, artistId.value));
 
 /** banner 背景：拿歌手头像铺满，叠一层向下变深的遮罩保证文字可读 */
 const bannerStyle = computed(() => {

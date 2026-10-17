@@ -12,6 +12,7 @@ import { trackArtist, trackTitle } from "@/types/player";
 import type { RecommendResult, UnifiedTrack } from "@/types/plugin";
 import { getCachedData, setCachedData } from "@/services/cache";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { useRefreshable } from "@/composables/useRefreshable";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
@@ -70,6 +71,9 @@ async function loadWithCache(): Promise<void> {
   }
   await load();
 }
+
+// 下拉刷新：重新拉取推荐
+useRefreshable(load);
 
 function playFromSource(section: SectionView, index: number) {
   const songs = section.result.songs ?? [];

@@ -14,6 +14,7 @@ import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { useRefreshable } from "@/composables/useRefreshable";
 import type { AlbumDetail, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
@@ -66,6 +67,9 @@ watch(
   },
   { immediate: true },
 );
+
+// 下拉刷新：重新拉取专辑详情
+useRefreshable(() => load(String(route.params.source ?? ""), String(route.params.id ?? "")));
 
 /** 发行时间：2012年8月10日 */
 const publishText = computed(() => {

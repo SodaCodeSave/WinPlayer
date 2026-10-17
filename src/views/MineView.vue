@@ -11,6 +11,7 @@ import { useLibraryStore, type LocalPlaylist } from "@/stores/library";
 import { usePlayerStore } from "@/stores/player";
 import { pluginDisplayName, usePluginsStore, type AggregatedSourceResult, type AppAvatar } from "@/stores/plugins";
 import { openContextMenuAt } from "@/services/contextMenu";
+import { useRefreshable } from "@/composables/useRefreshable";
 import type { UnifiedPlaylist } from "@/types/plugin";
 import CachedImage from "@/components/common/CachedImage.vue";
 
@@ -99,6 +100,11 @@ async function loadPlatformPlaylists() {
 onMounted(() => {
   void loadAvatar();
   void loadPlatformPlaylists();
+});
+
+// 下拉刷新：重新读取头像与平台歌单
+useRefreshable(async () => {
+  await Promise.all([loadAvatar(), loadPlatformPlaylists()]);
 });
 
 /* ------------------------------ 新建 / 重命名 / 删除 ------------------------------ */

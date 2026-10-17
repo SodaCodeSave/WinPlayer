@@ -6,12 +6,16 @@ import SongTable from "@/components/common/SongTable.vue";
 import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { useRefreshable } from "@/composables/useRefreshable";
 
 const router = useRouter();
 const library = useLibraryStore();
 const player = usePlayerStore();
 /** 移动端判定：用于挂 .is-mobile 类，切换移动端布局 */
 const isMobile = useIsMobile();
+
+// 下拉刷新：重新读取喜欢的音乐
+useRefreshable(() => library.loadAll());
 
 function playAll() {
   if (library.likedTracks.length) void player.playTracks(library.likedTracks, 0);

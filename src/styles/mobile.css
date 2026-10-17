@@ -13,6 +13,8 @@
 .wp-page.is-mobile {
   --page-pad-x: var(--space-lg);
   padding: 0 var(--page-pad-x) var(--space-2xl);
+  /* 顶部下拉时不触发系统级下拉刷新 / 滚动链，交给应用自己处理 */
+  overscroll-behavior-y: contain;
 }
 
 /* ------------------------------ 详情页头部 ------------------------------ */

@@ -6,6 +6,7 @@ import SideNav from "@/components/layout/SideNav.vue";
 import PlayerBar from "@/components/layout/PlayerBar.vue";
 import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import MobilePlayerBar from "@/components/layout/MobilePlayerBar.vue";
+import MobilePullToRefresh from "@/components/layout/MobilePullToRefresh.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
 import ToastHost from "@/components/common/ToastHost.vue";
 import ContextMenuHost from "@/components/common/ContextMenuHost.vue";
@@ -68,6 +69,7 @@ onUnmounted(() => {
     <!-- 移动端：迷你播放条 + 底部导航栏；桌面端：完整播放条 -->
     <MobilePlayerBar v-if="isMobile" />
     <MobileTabBar v-if="isMobile" />
+    <MobilePullToRefresh v-if="isMobile" />
     <PlayerBar v-if="!isMobile" class="app-playerbar" />
     <ToastHost />
     <ContextMenuHost />

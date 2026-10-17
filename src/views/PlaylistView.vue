@@ -19,6 +19,7 @@ import MobilePageHeader from "@/components/layout/MobilePageHeader.vue";
 import CachedImage from "@/components/common/CachedImage.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { useRefreshable } from "@/composables/useRefreshable";
 import type { PlaylistDetail, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
@@ -151,6 +152,9 @@ async function loadRoute() {
 }
 
 watch(() => route.fullPath, () => void loadRoute(), { immediate: true });
+
+// 下拉刷新：重新拉取歌单详情
+useRefreshable(loadRoute);
 
 function playAll() {
   if (tracks.value.length) void player.playTracks(tracks.value, 0);

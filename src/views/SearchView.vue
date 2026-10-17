@@ -10,6 +10,7 @@ import MediaCard from "@/components/common/MediaCard.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { ProgressRing } from "winuionweb";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { useRefreshable } from "@/composables/useRefreshable";
 import type { SearchResult, UnifiedAlbum, UnifiedArtist, UnifiedPlaylist, UnifiedTrack } from "@/types/plugin";
 
 const route = useRoute();
@@ -136,6 +137,12 @@ onMounted(() => {
       if (words.length && !keyword.value) keyword.value = words[0] ?? "";
     });
   }
+});
+
+// 下拉刷新：以当前关键词重搜
+useRefreshable(() => {
+  const trimmed = keyword.value.trim();
+  if (trimmed) return search(trimmed);
 });
 </script>
 
