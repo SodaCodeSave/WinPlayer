@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  允许通过 FileProvider 暴露的目录：更新包统一下载在应用缓存目录（cache/updates），
+  其余目录仅为兜底，保证任何落在应用私有空间内的 APK 都能被安装器读取。
+-->
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <external-files-path name="external_files" path="." />
+</paths>

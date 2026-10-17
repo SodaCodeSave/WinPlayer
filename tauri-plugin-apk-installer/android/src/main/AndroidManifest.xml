@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 允许本应用调起系统软件包安装器（Android 8.0+ 首次安装时系统会引导用户授权） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <!-- 把应用私有目录中的 APK 暴露给系统安装器（只读、需显式授予 URI 权限） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="app.tauri.apkinstaller.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/apk_installer_file_paths" />
+        </provider>
+    </application>
+</manifest>

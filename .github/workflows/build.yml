@@ -335,15 +335,43 @@ jobs:
         run: |
           mkdir -p dist-renamed
           shopt -s globstar nullglob
+
+          # ABI 从 Gradle 的 split 输出目录取（apk/<abi>/release/app-*.apk），
+          # 不能只认文件名：ARM 变体的文件名会把 ABI 中的 - 换成 _，
+          # 于是 arm64-v8a / armeabi-v7a 都落进兜底分支，被覆盖成同一个
+          # 名为 universal 的包（实际只是其中一种 ABI），arm64 设备拿不到正确包。
+          abi_from_path() {
+            local seg
+            IFS='/' read -ra segs <<< "$1"
+            for seg in "${segs[@]}"; do
+              case "$seg" in
+                arm64-v8a|armeabi-v7a|x86_64|x86|universal) echo "$seg"; return ;;
+              esac
+            done
+          }
+
           for f in src-tauri/gen/android/app/build/outputs/apk/**/*.apk; do
             name=$(basename "$f")
-            case "$name" in
-              *arm64-v8a*) arch=arm64 ;;
-              *armeabi-v7a*) arch=arm ;;
-              *x86_64*) arch=x86_64 ;;
-              *x86*) arch=x86 ;;
-              *) arch=universal ;;
+            abi="$(abi_from_path "$f")"
+            case "$abi" in
+              arm64-v8a) arch=arm64 ;;
+              armeabi-v7a) arch=arm ;;
+              x86_64) arch=x86_64 ;;
+              x86) arch=x86 ;;
+              universal) arch=universal ;;
+              *)
+                # 兜底：目录中无 ABI 段时，把文件名里的下划线归一化后再匹配
+                norm=${name//_/-}
+                case "$norm" in
+                  *arm64-v8a*) arch=arm64 ;;
+                  *armeabi-v7a*) arch=arm ;;
+                  *x86-64*|*x86_64*) arch=x86_64 ;;
+                  *x86*) arch=x86 ;;
+                  *) arch=universal ;;
+                esac
+                ;;
             esac
+            echo "$f -> WinPlayer-$VERSION-android-$arch.apk"
             cp "$f" "dist-renamed/WinPlayer-$VERSION-android-$arch.apk"
           done
           ls -la dist-renamed

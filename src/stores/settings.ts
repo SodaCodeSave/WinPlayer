@@ -19,6 +19,9 @@ export type ThemePreference = "system" | "light" | "dark";
 /** 「缓存项」策略：歌单（页面数据）/ 图片，可组合或全关 */
 export type CachePolicy = "playlist" | "images" | "both" | "none";
 
+/** 自动检查更新的频率：每次启动 / 每 24 小时 / 仅手动 */
+export type UpdateCheckFrequency = "startup" | "daily" | "manual";
+
 /** 「来源偏好」默认值：空串表示不指定插件，由系统按当前逻辑自动决定 */
 export type SourcePreference = string;
 
@@ -52,6 +55,16 @@ export const useSettingsStore = defineStore("settings", () => {
   const fontFamily = ref("");
   /** 缓存项策略：歌单（页面数据）/ 图片缓存开关组合 */
   const cachePolicy = ref<CachePolicy>("both");
+  /** 是否在启动时自动检查更新 */
+  const autoCheckUpdate = ref(true);
+  /** 自动检查更新的频率 */
+  const updateCheckFrequency = ref<UpdateCheckFrequency>("startup");
+  /** 是否接收预发布（prerelease）版本 */
+  const updateIncludePrerelease = ref(false);
+  /** 用户选择「忽略此版本」的版本号（自动检查时不再弹窗提示） */
+  const ignoredUpdateVersion = ref("");
+  /** 上次检查更新的时间戳（毫秒），用于「每 24 小时」节流 */
+  const lastUpdateCheckAt = ref(0);
   const loaded = ref(false);
 
   /** 系统配色查询：winuionweb 的暗色控件变量只认 html 上的 theme-dark 类，
@@ -105,6 +118,17 @@ export const useSettingsStore = defineStore("settings", () => {
     eqGains.value = await getSetting<number[]>("settings.eqGains", [...FLAT_GAINS]);
     fontFamily.value = await getSetting<string>("settings.fontFamily", "");
     cachePolicy.value = await getSetting<CachePolicy>("settings.cachePolicy", "both");
+    autoCheckUpdate.value = await getSetting<boolean>("settings.autoCheckUpdate", true);
+    updateCheckFrequency.value = await getSetting<UpdateCheckFrequency>(
+      "settings.updateCheckFrequency",
+      "startup",
+    );
+    updateIncludePrerelease.value = await getSetting<boolean>(
+      "settings.updateIncludePrerelease",
+      false,
+    );
+    ignoredUpdateVersion.value = await getSetting<string>("settings.ignoredUpdateVersion", "");
+    lastUpdateCheckAt.value = await getSetting<number>("settings.lastUpdateCheckAt", 0);
     applyTheme();
     applyFont();
     // 启动时把均衡器配置应用到原生引擎
@@ -150,6 +174,33 @@ export const useSettingsStore = defineStore("settings", () => {
     const isImages = value === "both" || value === "images";
     if (wasPlaylist && !isPlaylist) await clearDataCache();
     if (wasImages && !isImages) await invoke("cache_clear").catch(() => {});
+  }
+
+  /* ------------------------------ 自动更新 ------------------------------ */
+
+  async function setAutoCheckUpdate(value: boolean): Promise<void> {
+    autoCheckUpdate.value = value;
+    await setSetting("settings.autoCheckUpdate", value);
+  }
+
+  async function setUpdateCheckFrequency(value: UpdateCheckFrequency): Promise<void> {
+    updateCheckFrequency.value = value;
+    await setSetting("settings.updateCheckFrequency", value);
+  }
+
+  async function setUpdateIncludePrerelease(value: boolean): Promise<void> {
+    updateIncludePrerelease.value = value;
+    await setSetting("settings.updateIncludePrerelease", value);
+  }
+
+  async function setIgnoredUpdateVersion(value: string): Promise<void> {
+    ignoredUpdateVersion.value = value;
+    await setSetting("settings.ignoredUpdateVersion", value);
+  }
+
+  async function setLastUpdateCheckAt(value: number): Promise<void> {
+    lastUpdateCheckAt.value = value;
+    await setSetting("settings.lastUpdateCheckAt", value);
   }
 
   /** 通用来源偏好写入（四个来源选择框共用） */
@@ -217,6 +268,11 @@ export const useSettingsStore = defineStore("settings", () => {
     githubMirror,
     smtcEnabled,
     cachePolicy,
+    autoCheckUpdate,
+    updateCheckFrequency,
+    updateIncludePrerelease,
+    ignoredUpdateVersion,
+    lastUpdateCheckAt,
     trackSourceId,
     playSourceId,
     lyricsSourceId,
@@ -233,6 +289,11 @@ export const useSettingsStore = defineStore("settings", () => {
     setGithubMirror,
     setSmtcEnabled,
     setCachePolicy,
+    setAutoCheckUpdate,
+    setUpdateCheckFrequency,
+    setUpdateIncludePrerelease,
+    setIgnoredUpdateVersion,
+    setLastUpdateCheckAt,
     setSourcePreference,
     setSourceSearchFormat,
     setEqEnabled,

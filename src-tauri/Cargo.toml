@@ -25,6 +25,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 安卓媒体控件（媒体通知/锁屏/线控）：vendored 修复版，桌面端为 no-op
 tauri-plugin-media-session = { path = "../tauri-plugin-media-session" }
+# 安卓 APK 安装（自动更新用）：调起系统软件包安装器，桌面端为 no-op
+tauri-plugin-apk-installer = { path = "../tauri-plugin-apk-installer" }
 # 使用 rustls（纯 Rust TLS），避免依赖系统 OpenSSL，便于 Android/Linux 交叉编译与打包
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls", "blocking"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "sync"] }

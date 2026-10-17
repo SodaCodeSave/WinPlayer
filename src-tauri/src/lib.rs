@@ -1,6 +1,7 @@
 mod commands;
 mod player;
 mod smtc;
+mod updater;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -23,6 +24,8 @@ pub fn run() {
             .plugin(tauri_plugin_opener::init())
             // 安卓媒体控件（媒体通知/锁屏/线控），桌面端自动 no-op
             .plugin(tauri_plugin_media_session::init())
+            // 安卓 APK 安装（自动更新），桌面端自动 no-op
+            .plugin(tauri_plugin_apk_installer::init())
             .plugin(
                 tauri_plugin_sql::Builder::default()
                     .add_migrations("sqlite:winplayer.db", db_migrations())
@@ -43,6 +46,11 @@ pub fn run() {
                 commands::plugins::plugin_storage_get,
                 commands::plugins::plugin_storage_set,
                 commands::smtc::smtc_sync,
+                updater::updater_platform,
+                updater::updater_check,
+                updater::updater_download,
+                updater::updater_download_cancel,
+                updater::updater_install,
                 player::player_load,
                 player::player_play,
                 player::player_pause,
