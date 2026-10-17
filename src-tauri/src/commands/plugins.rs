@@ -409,17 +409,16 @@ pub async fn plugin_install_from_url(
     let mirror = mirror.as_deref().and_then(normalize_mirror);
 
     // GitHub 仓库地址安装顺序：
-    // 1) 镜像源下载最新 Release（优先 zip 资产，其次源码 zipball）
-    // 2) 镜像源 codeload 分支归档
-    // 3) 直连 codeload 兜底
+    // 1) 下载最新 Release（优先 zip 资产，其次源码 zipball）
+    // 2) codeload 分支归档（镜像源优先，直连兜底）
     // 每次尝试的具体失败原因都会收集进最终错误信息，便于排查。
     if let Some((owner, repo, refs)) = github_repo_candidates(&url) {
         let mut errors: Vec<String> = Vec::new();
 
-        // 1) 镜像源最新 Release（未配置镜像时跳过，避免直连 api 卡住）
-        if let Some(m) = mirror.as_deref() {
+        // 1) 下载最新 Release（无论是否配置镜像源都尝试，有镜像则走镜像）
+        {
             let api = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
-            match download_bytes(&client, &apply_mirror(&api, Some(m))).await {
+            match download_bytes(&client, &apply_mirror(&api, mirror.as_deref())).await {
                 Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
                     Ok(release) => {
                         let mut candidates: Vec<String> = release
@@ -443,11 +442,18 @@ pub async fn plugin_install_from_url(
                             errors.push(format!("{api}: 最新 Release 无 zip 资产"));
                         }
                         for download in candidates {
-                            match download_bytes(&client, &apply_mirror(&download, Some(m))).await {
+                            match download_bytes(
+                                &client,
+                                &apply_mirror(&download, mirror.as_deref()),
+                            )
+                            .await
+                            {
                                 Ok(bytes) if bytes.starts_with(b"PK") => {
                                     return install_from_zip(&app, &bytes);
                                 }
-                                Ok(_) => errors.push(format!("{download}: 响应不是有效的 zip")),
+                                Ok(_) => {
+                                    errors.push(format!("{download}: 响应不是有效的 zip"))
+                                }
                                 Err(e) => errors.push(format!("{download}: {e}")),
                             }
                         }
@@ -458,9 +464,10 @@ pub async fn plugin_install_from_url(
             }
         }
 
-        // 2) 镜像源 codeload → 3) 直连 codeload
+        // 2) codeload 分支归档（镜像源优先，直连兜底）
         for reference in refs {
-            let archive = format!("https://codeload.github.com/{owner}/{repo}/zip/refs/{reference}");
+            let archive =
+                format!("https://github.com/{owner}/{repo}/archive/refs/heads/{reference}");
             let attempts: Vec<String> = match mirror.as_deref() {
                 Some(m) => vec![format!("{m}/{archive}"), archive],
                 None => vec![archive],
