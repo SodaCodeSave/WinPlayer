@@ -23,3 +23,24 @@ export function cachedImgUrl(url?: string | null): string | undefined {
   if (!isImageCacheEnabled()) return url;
   return `http://cachedimg.localhost/?src=${encodeURIComponent(url)}`;
 }
+
+/**
+ * [`cachedImgUrl`](./index) 的逆变换：还原缓存改写前的原始 http(s) 地址。
+ *
+ * `cachedimg.localhost` 是 Rust 自定义协议的虚拟域名，只在 WebView 内部有效，
+ * 系统媒体控件（Windows SMTC / Android 媒体通知）的原生下载走不了，需要拿原图。
+ * 非 cache 改写地址（原图 / data: / 相对路径）原样返回；空值返回 null。
+ */
+export function resolveImgUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const match = /^http:\/\/cachedimg\.localhost\/\?src=(.+)$/i.exec(url);
+  if (match) {
+    try {
+      const source = decodeURIComponent(match[1]);
+      if (/^https?:\/\//i.test(source)) return source;
+    } catch {
+      // decodeURIComponent 失败则按原样返回
+    }
+  }
+  return url;
+}

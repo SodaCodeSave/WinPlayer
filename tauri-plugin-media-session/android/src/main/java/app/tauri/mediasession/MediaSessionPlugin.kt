@@ -373,12 +373,26 @@ class MediaSessionPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun fetchBitmapFromImageUrl(url: String): Bitmap? {
+        // 本地缓存文件（file:// URI）直接解码，不走网络
+        if (url.startsWith("file:", ignoreCase = true)) {
+            val path = try { java.net.URI(url).path } catch (_: Exception) { null } ?: return null
+            return try {
+                decodeSampledBitmap(java.io.File(path).readBytes(), MAX_ARTWORK_SIZE)
+            } catch (_: Exception) {
+                null
+            }
+        }
         var connection: HttpURLConnection? = null
         return try {
             connection = URL(url).openConnection() as HttpURLConnection
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
             connection.instanceFollowRedirects = true
+            // 部分音乐 CDN 会拒绝默认的 Dalvik UA，伪装成浏览器提升兼容性
+            connection.setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            )
             connection.connect()
             val contentType = connection.contentType?.lowercase() ?: ""
             if (contentType.startsWith("video/")) {

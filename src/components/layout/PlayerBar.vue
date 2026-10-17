@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useRouter, type RouteLocationRaw } from "vue-router";
 import { Slider } from "winuionweb";
 import CachedImage from "@/components/common/CachedImage.vue";
 import { usePlayerStore } from "@/stores/player";
@@ -10,6 +11,7 @@ import LyricsPanel from "./LyricsPanel.vue";
 
 const player = usePlayerStore();
 const library = useLibraryStore();
+const router = useRouter();
 
 /** 拖动进度滑块时的本地预览值（拖动结束才 seek，期间屏蔽 timeupdate 覆盖） */
 const draggingSeek = ref(false);
@@ -21,6 +23,30 @@ const seekValue = computed(() => (draggingSeek.value ? seekLocal.value : player.
 const seekTime = computed(() => formatTime(seekValue.value));
 const progressMax = computed(() => (player.duration > 0 ? player.duration : 1));
 const liked = computed(() => (player.currentTrack ? library.isLiked(player.currentTrack) : false));
+
+/** 当前曲目的歌手：插件回传 artistIds 时可跳转歌手详情页，缺失则退化为纯文本 */
+interface ArtistLink {
+  name: string;
+  target: RouteLocationRaw | null;
+}
+
+const artistCells = computed<ArtistLink[]>(() => {
+  const track = player.currentTrack;
+  if (!track) return [];
+  const names = track.artists ?? [];
+  const ids = track.artistIds ?? [];
+  return names.map((name, index) => ({
+    name,
+    target:
+      track.sourceId && ids[index]
+        ? { name: "artist", params: { source: track.sourceId, id: ids[index] } }
+        : null,
+  }));
+});
+
+function go(target: RouteLocationRaw): void {
+  void router.push(target);
+}
 
 const modeIcon = computed(() => {
   switch (player.mode) {
@@ -88,7 +114,22 @@ async function toggleLikeCurrent() {
       <div class="meta">
         <div class="title ellipsis">{{ player.currentTrack ? trackTitle(player.currentTrack) : "未在播放" }}</div>
         <div class="artist ellipsis">
-          {{ player.currentTrack ? trackArtist(player.currentTrack) : "从插件来源发现音乐" }}
+          <template v-if="!player.currentTrack">从插件来源发现音乐</template>
+          <template v-else-if="!artistCells.length">{{ trackArtist(player.currentTrack) }}</template>
+          <template v-else>
+            <template v-for="(artist, index) in artistCells" :key="`${artist.name}-${index}`">
+              <span v-if="index" class="artist-sep"> / </span>
+              <button
+                v-if="artist.target"
+                class="artist-link"
+                :title="`查看歌手「${artist.name}」`"
+                @click="go(artist.target!)"
+              >
+                {{ artist.name }}
+              </button>
+              <span v-else>{{ artist.name }}</span>
+            </template>
+          </template>
         </div>
       </div>
       <button
@@ -250,6 +291,25 @@ async function toggleLikeCurrent() {
   font-size: 12px;
   color: var(--wp-text-secondary);
   margin-top: 2px;
+}
+
+.artist-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.artist-link:hover {
+  color: var(--wp-text-primary);
+  text-decoration: underline;
+}
+
+.artist-sep {
+  color: var(--wp-text-tertiary);
 }
 
 .ellipsis {

@@ -16,6 +16,7 @@
 import { addPluginListener, invoke, type PluginListener } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { watch, type WatchStopHandle } from "vue";
+import { resolveImgUrl } from "@/services/imageCache";
 import type { UnifiedTrack } from "@/types/plugin";
 
 /** Rust → 前端的按钮事件名（见 src-tauri/src/smtc.rs） */
@@ -108,7 +109,8 @@ function buildSnapshot(): SmtcSnapshot {
     title: track.name,
     artist: (track.artists ?? []).join(" / "),
     album: track.album ?? "",
-    cover: track.cover?.trim() ? track.cover : null,
+    // cover 可能是 cachedimg:// 改写地址（WebView 专属），还原成原图交给系统侧
+    cover: resolveImgUrl(track.cover?.trim() ? track.cover : null),
     positionMs,
     durationMs: engineDurationMs > 0 ? engineDurationMs : (track.duration ?? 0),
   };
@@ -144,13 +146,13 @@ function schedule(): void {
 }
 
 /** 快照 → media-session 插件的 MediaState（秒制，与 Rust 端结构对应） */
-function toMediaState(snapshot: SmtcSnapshot): Record<string, unknown> {
+function toMediaState(snapshot: SmtcSnapshot, cover: string | null): Record<string, unknown> {
   return {
     title: snapshot.title,
     artist: snapshot.artist,
     album: snapshot.album,
     // 空串表示清除封面，避免上一首的封面残留
-    artworkUrl: snapshot.cover ?? "",
+    artworkUrl: cover ?? "",
     duration: snapshot.durationMs / 1000,
     position: snapshot.positionMs / 1000,
     isPlaying: snapshot.status === "playing",
@@ -158,6 +160,30 @@ function toMediaState(snapshot: SmtcSnapshot): Record<string, unknown> {
     canNext: true,
     canSeek: true,
   };
+}
+
+/**
+ * 封面地址解析：优先返回本地缓存文件（`file://` URI，秒加载且不依赖网络），
+ * 缓存未命中时回退原图 URL（Windows 系统直连 / 安卓插件原生下载）。
+ */
+async function resolveCover(snapshot: SmtcSnapshot): Promise<string | null> {
+  const url = snapshot.cover;
+  if (!url) return null;
+  const local = await invoke<string | null>("cover_cache_path", { url }).catch(() => null);
+  return local ?? url;
+}
+
+async function send(snapshot: SmtcSnapshot): Promise<void> {
+  const cover = await resolveCover(snapshot);
+  if (onAndroid) {
+    if (!snapshot.active) {
+      await invoke("plugin:media-session|clear");
+    } else {
+      await invoke("plugin:media-session|update_state", { state: toMediaState(snapshot, cover) });
+    }
+    return;
+  }
+  await invoke("smtc_sync", { snapshot: { ...snapshot, cover } });
 }
 
 function flush(): void {
@@ -171,13 +197,7 @@ function flush(): void {
   pending = null;
   last = snapshot;
   inFlight = true;
-  const request =
-    onAndroid && snapshot.active
-      ? invoke("plugin:media-session|update_state", { state: toMediaState(snapshot) })
-      : onAndroid
-        ? invoke("plugin:media-session|clear")
-        : invoke("smtc_sync", { snapshot });
-  request
+  send(snapshot)
     .catch((error) => {
       if (warned) return;
       warned = true;

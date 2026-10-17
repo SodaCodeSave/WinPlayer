@@ -316,3 +316,14 @@ pub async fn image_cache_prefetch(app: tauri::AppHandle, url: String) -> Result<
     }
     fetch_and_cache(&url, &path).await.map(|_| ())
 }
+
+/// 查询图片的本地缓存路径：命中返回 `file://` URI（供系统媒体控件直接读取本地文件），
+/// 未命中返回 `null` 且**不触发下载**——系统侧展示封面另有原图直连兜底，这里保持零阻塞
+#[tauri::command]
+pub fn cover_cache_path(app: tauri::AppHandle, url: String) -> Option<String> {
+    let path = image_path(&app, &url).ok()?;
+    if !path.is_file() {
+        return None;
+    }
+    tauri::Url::from_file_path(path).ok().map(|uri| uri.to_string())
+}
