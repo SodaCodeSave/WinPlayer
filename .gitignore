@@ -24,7 +24,8 @@ Thumbs.db
 desktop.ini
 
 # --- Tauri / Rust ---
-src-tauri/target/
+# 不带路径前缀 → 匹配任意层级的 target/ 目录（含 tauri-plugin-*/ 等 vendored 子 crate 的构建产物）
+target/
 src-tauri/gen/
 src-tauri/WixTools/
 src-tauri/nsis/
@@ -50,6 +51,7 @@ plugins/*.zip
 src/assets/fonts/*.ttf
 
 .editorconfig
-src-tauri/Cargo.lock
+# 依赖锁文件不入库（应用与 vendored 子 crate 的 Cargo.lock 均按此忽略）
+Cargo.lock
 
 .trae/
