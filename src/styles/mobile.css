@@ -99,6 +99,9 @@
 .wp-page.is-mobile .search-header .search-field {
   max-width: none;
   width: 100%;
+  /* 父级在移动端是纵向 flex，默认 flex-basis:0 会吞掉 height，这里固定尺寸 */
+  flex: none;
+  height: 44px;
 }
 
 .wp-page.is-mobile .search-header .wp-accent-button {

@@ -131,10 +131,26 @@ function submit() {
   void router.replace({ path: "/search", query: { q: trimmed } });
 }
 
+/** 键盘回车提交：输入法组词过程中（isComposing）不触发，避免半截词就搜索 */
+function onEnter(event: KeyboardEvent) {
+  if (event.isComposing) return;
+  submit();
+}
+
+/** 热门搜索词 */
+const hotKeywords = ref<string[]>([]);
+
+function pickKeyword(word: string) {
+  keyword.value = word;
+  submit();
+}
+
 onMounted(() => {
   if (!route.query.q && plugins.enabledRecords.length) {
     void plugins.getHotKeywords().then((words) => {
-      if (words.length && !keyword.value) keyword.value = words[0] ?? "";
+      hotKeywords.value = words;
+      // 移动端不预填，改为展示热门词胶囊，点击即搜；桌面端保持原有预填行为
+      if (words.length && !keyword.value && !isMobile) keyword.value = words[0] ?? "";
     });
   }
 });
@@ -157,11 +173,25 @@ useRefreshable(() => {
           v-model="keyword"
           class="search-input"
           type="text"
+          enterkeyhint="search"
+          inputmode="search"
+          autocomplete="off"
           placeholder="输入关键词，同时检索所有已启用的插件源"
-          @keydown.enter="submit"
+          @keydown.enter="onEnter"
         />
+        <button v-if="keyword" class="search-clear" title="清空" @click="keyword = ''">
+          <span class="wp-icon">&#xF36A;</span>
+        </button>
       </div>
       <button class="wp-accent-button" :disabled="!keyword.trim() || loading" @click="submit">搜索</button>
+    </div>
+
+    <!-- 移动端热门搜索词：点击即搜 -->
+    <div v-if="isMobile && !searched && hotKeywords.length" class="hot-keywords">
+      <span class="hot-label">热门搜索</span>
+      <button v-for="word in hotKeywords" :key="word" class="hot-chip" @click="pickKeyword(word)">
+        {{ word }}
+      </button>
     </div>
 
     <EmptyState
@@ -436,5 +466,62 @@ useRefreshable(() => {
   margin: var(--space-lg) 0 0;
   font-size: 12px;
   color: var(--wp-danger);
+}
+
+.search-clear {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--wp-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.search-clear:hover {
+  background: var(--wp-card-hover);
+  color: var(--wp-text-primary);
+}
+
+.hot-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.hot-label {
+  font-size: 13px;
+  color: var(--wp-text-tertiary);
+}
+
+.hot-chip {
+  border: none;
+  border-radius: 999px;
+  background: var(--wp-control-fill);
+  color: var(--wp-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  padding: var(--space-md) var(--space-xl);
+  min-height: 36px;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.hot-chip:hover {
+  background: var(--wp-card-hover);
+  color: var(--wp-text-primary);
+}
+
+.hot-chip:active {
+  background: var(--wp-card-active);
 }
 </style>
