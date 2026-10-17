@@ -10,6 +10,7 @@ import { usePluginsStore } from "@/stores/plugins";
 import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
 import CachedImage from "@/components/common/CachedImage.vue";
 import { openPlaylistPicker } from "@/services/playlistPicker";
+import { copyText } from "@/services/clipboard";
 import { formatDuration, trackTitle } from "@/types/player";
 import type { UnifiedTrack } from "@/types/plugin";
 
@@ -110,7 +111,7 @@ const canAddToPlaylist = computed(
     plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
 );
 
-/** 行右键菜单：添加到歌单 / 添加到我喜欢 / 移除 / 添加到播放队列 */
+/** 行右键菜单：添加到歌单 / 添加到我喜欢 / 移除 / 添加到播放队列 / 复制歌曲名 / 复制歌曲别名 */
 function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
   const liked = library.isLiked(track);
   const items: ContextMenuItem[] = [];
@@ -142,6 +143,21 @@ function openRowMenu(track: UnifiedTrack, event: MouseEvent) {
       icon: "&#xF34D;",
       danger: true,
       action: () => emit("remove", track),
+    });
+  }
+  items.push({
+    key: "copy-name",
+    label: "复制歌曲名",
+    icon: "&#xF32C;",
+    action: () => copyText(track.name, "歌曲名"),
+  });
+  const alias = track.alias;
+  if (alias) {
+    items.push({
+      key: "copy-alias",
+      label: "复制歌曲别名",
+      icon: "&#xF32C;",
+      action: () => copyText(alias, "歌曲别名"),
     });
   }
   openContextMenu(event, items);

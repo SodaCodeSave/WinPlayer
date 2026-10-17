@@ -13,6 +13,10 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { pluginDisplayName, usePluginsStore } from "@/stores/plugins";
+import { useLibraryStore } from "@/stores/library";
+import { toast } from "@/services/toast";
+import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { copyText } from "@/services/clipboard";
 import CachedImage from "@/components/common/CachedImage.vue";
 import type { UnifiedAlbum, UnifiedArtist, UnifiedPlaylist } from "@/types/plugin";
 
@@ -25,6 +29,7 @@ const props = defineProps<{
 
 const router = useRouter();
 const plugins = usePluginsStore();
+const library = useLibraryStore();
 
 const playlist = computed(() => (props.kind === "playlist" ? props.playlist : undefined));
 const album = computed(() => (props.kind === "album" ? props.album : undefined));
@@ -84,10 +89,54 @@ function open() {
   if (!target.value) return;
   void router.push(target.value);
 }
+
+/* ------------------------------ 歌单右键菜单 ------------------------------ */
+
+/** 把插件来源歌单整体复制为一个本地歌单 */
+async function copyToLocal(p: UnifiedPlaylist) {
+  if (!p.sourceId) return;
+  toast(`正在复制「${p.name}」到本地…`, "info");
+  try {
+    const detail = await plugins.getPlaylistDetail(p.sourceId, p.id);
+    const tracks = detail?.tracks ?? [];
+    if (!tracks.length) {
+      toast("该歌单没有可复制的歌曲", "error");
+      return;
+    }
+    const created = await library.createPlaylist(detail?.name || p.name);
+    if (!created) return;
+    const added = await library.addTracksToPlaylist(created.id, tracks);
+    toast(`已复制 ${added} 首歌曲到本地歌单「${created.name}」`, "success");
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+}
+
+/** 歌单卡片右键菜单：复制到本地 / 复制歌单名 */
+function openMenu(event: MouseEvent) {
+  if (props.kind !== "playlist" || !playlist.value) return;
+  const p = playlist.value;
+  const items: ContextMenuItem[] = [];
+  if (p.sourceId) {
+    items.push({
+      key: "copy-local",
+      label: "复制到本地",
+      icon: "&#xF151;",
+      action: () => copyToLocal(p),
+    });
+  }
+  items.push({
+    key: "copy-name",
+    label: "复制歌单名",
+    icon: "&#xF32C;",
+    action: () => copyText(p.name, "歌单名"),
+  });
+  openContextMenu(event, items);
+}
 </script>
 
 <template>
-  <button class="media-card" :title="tooltip" @click="open">
+  <button class="media-card" :title="tooltip" @click="open" @contextmenu="openMenu">
     <div class="card-cover" :class="{ round: kind === 'artist' }">
       <CachedImage v-if="cover" :src="cover" class="cover-img" />
       <span v-else class="wp-icon cover-placeholder">{{ placeholderIcon }}</span>

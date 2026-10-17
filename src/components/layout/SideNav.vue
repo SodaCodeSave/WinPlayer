@@ -2,8 +2,9 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ContentDialog, TextBox } from "winuionweb";
-import { useLibraryStore } from "@/stores/library";
+import { useLibraryStore, type LocalPlaylist } from "@/stores/library";
 import { usePluginsStore, type AggregatedSourceResult } from "@/stores/plugins";
+import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
 import type { UnifiedPlaylist } from "@/types/plugin";
 
 const router = useRouter();
@@ -27,6 +28,55 @@ async function openCreateDialog() {
   const playlist = await library.createPlaylist(newPlaylistName.value, newPlaylistDescription.value);
   if (playlist) {
     void router.push({ name: "playlist", params: { id: playlist.id } });
+  }
+}
+
+/* ------------------------------ 歌单右键菜单（重命名 / 删除） ------------------------------ */
+
+interface RenameDialogRef {
+  ShowAsync: () => Promise<string>;
+}
+
+const renameDialogRef = ref<RenameDialogRef | null>(null);
+const deleteDialogRef = ref<RenameDialogRef | null>(null);
+const menuPlaylist = ref<LocalPlaylist | null>(null);
+const renameValue = ref("");
+
+function openPlaylistMenu(playlist: LocalPlaylist, event: MouseEvent) {
+  const items: ContextMenuItem[] = [
+    {
+      key: "rename",
+      label: "重命名歌单",
+      icon: "&#xF66A;",
+      action: () => openRenameDialog(playlist),
+    },
+    {
+      key: "delete",
+      label: "删除歌单",
+      icon: "&#xF34D;",
+      danger: true,
+      action: () => openDeleteDialog(playlist),
+    },
+  ];
+  openContextMenu(event, items);
+}
+
+async function openRenameDialog(playlist: LocalPlaylist) {
+  menuPlaylist.value = playlist;
+  renameValue.value = playlist.name;
+  const result = await renameDialogRef.value?.ShowAsync();
+  if (result !== "Primary") return;
+  await library.renamePlaylist(playlist.id, renameValue.value);
+}
+
+async function openDeleteDialog(playlist: LocalPlaylist) {
+  menuPlaylist.value = playlist;
+  const result = await deleteDialogRef.value?.ShowAsync();
+  if (result !== "Primary") return;
+  await library.deletePlaylist(playlist.id);
+  // 正在浏览被删除的歌单时跳走
+  if (route.name === "playlist" && route.params.id === String(playlist.id)) {
+    void router.replace({ name: "liked" });
   }
 }
 
@@ -192,6 +242,8 @@ function isActive(name: string): boolean {
             :to="{ name: 'playlist', params: { id: playlist.id } }"
             class="nav-item"
             :class="{ active: route.name === 'playlist' && route.params.id === String(playlist.id) }"
+            :title="playlist.name"
+            @contextmenu="openPlaylistMenu(playlist, $event)"
           >
             <span class="wp-icon nav-icon">&#xF4EE;</span>
             <span class="nav-label ellipsis">{{ playlist.name }}</span>
@@ -280,6 +332,30 @@ function isActive(name: string): boolean {
         />
       </div>
     </ContentDialog>
+
+    <ContentDialog
+      ref="renameDialogRef"
+      Title="重命名歌单"
+      PrimaryButtonText="保存"
+      CloseButtonText="取消"
+    >
+      <div class="dialog-form">
+        <TextBox
+          :Text="renameValue"
+          PlaceholderText="歌单名称"
+          :MaxLength="50"
+          @update:Text="renameValue = String($event ?? '')"
+        />
+      </div>
+    </ContentDialog>
+
+    <ContentDialog
+      ref="deleteDialogRef"
+      Title="删除歌单"
+      :Content="`删除后无法恢复，确定要删除歌单「${menuPlaylist?.name ?? ''}」吗？`"
+      PrimaryButtonText="删除"
+      CloseButtonText="取消"
+    />
   </nav>
 </template>
 

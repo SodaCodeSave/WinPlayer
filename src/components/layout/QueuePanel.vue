@@ -5,6 +5,7 @@ import { useLibraryStore } from "@/stores/library";
 import { usePluginsStore } from "@/stores/plugins";
 import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
 import { openPlaylistPicker } from "@/services/playlistPicker";
+import { copyText } from "@/services/clipboard";
 import { formatDuration, trackArtist, trackTitle } from "@/types/player";
 import type { UnifiedTrack } from "@/types/plugin";
 
@@ -50,6 +51,21 @@ function openItemMenu(track: UnifiedTrack, uid: string, event: MouseEvent) {
     danger: true,
     action: () => player.removeFromQueue(uid),
   });
+  items.push({
+    key: "copy-name",
+    label: "复制歌曲名",
+    icon: "&#xF32C;",
+    action: () => copyText(track.name, "歌曲名"),
+  });
+  const alias = track.alias;
+  if (alias) {
+    items.push({
+      key: "copy-alias",
+      label: "复制歌曲别名",
+      icon: "&#xF32C;",
+      action: () => copyText(alias, "歌曲别名"),
+    });
+  }
   openContextMenu(event, items);
 }
 </script>

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { usePluginsStore, type AggregatedSourceResult, type PluginRecord } from "@/stores/plugins";
 import { usePlayerStore } from "@/stores/player";
+import { useLibraryStore } from "@/stores/library";
+import { openContextMenu, type ContextMenuItem } from "@/services/contextMenu";
+import { openPlaylistPicker } from "@/services/playlistPicker";
+import { copyText } from "@/services/clipboard";
 import { trackArtist, trackTitle } from "@/types/player";
-import type { RecommendResult } from "@/types/plugin";
+import type { RecommendResult, UnifiedTrack } from "@/types/plugin";
 import { getCachedData, setCachedData } from "@/services/cache";
 import { useIsMobile } from "@/composables/useIsMobile";
 import PlaylistCard from "@/components/common/PlaylistCard.vue";
@@ -15,6 +19,7 @@ import { ProgressRing } from "winuionweb";
 const router = useRouter();
 const plugins = usePluginsStore();
 const player = usePlayerStore();
+const library = useLibraryStore();
 const isMobile = useIsMobile();
 
 const loading = ref(false);
@@ -68,6 +73,51 @@ async function loadWithCache(): Promise<void> {
 function playFromSource(section: SectionView, index: number) {
   const songs = section.result.songs ?? [];
   if (songs.length) void player.playTracks(songs, index);
+}
+
+/* ------------------------------ 歌曲卡片右键菜单 ------------------------------ */
+
+const canAddToPlaylist = computed(
+  () =>
+    library.playlists.length > 0 ||
+    plugins.records.some((r) => r.enabled && plugins.hasCapability(r, "myPlaylists")),
+);
+
+/** 推荐歌曲右键菜单：添加到歌单 / 添加到喜欢 / 复制歌曲名 / 复制歌曲别名 */
+function openSongMenu(song: UnifiedTrack, event: MouseEvent) {
+  const liked = library.isLiked(song);
+  const items: ContextMenuItem[] = [];
+  if (canAddToPlaylist.value) {
+    items.push({
+      key: "playlist",
+      label: "添加到歌单",
+      icon: "&#xF4EE;",
+      action: () => openPlaylistPicker(song),
+    });
+  }
+  items.push({
+    key: "like",
+    label: liked ? "取消喜欢" : "添加到喜欢",
+    icon: liked ? "&#xF47E;" : "&#xF47A;",
+    filled: liked,
+    action: () => library.toggleLike(song),
+  });
+  items.push({
+    key: "copy-name",
+    label: "复制歌曲名",
+    icon: "&#xF32C;",
+    action: () => copyText(song.name, "歌曲名"),
+  });
+  const alias = song.alias;
+  if (alias) {
+    items.push({
+      key: "copy-alias",
+      label: "复制歌曲别名",
+      icon: "&#xF32C;",
+      action: () => copyText(alias, "歌曲别名"),
+    });
+  }
+  openContextMenu(event, items);
 }
 
 onMounted(loadWithCache);
@@ -135,6 +185,7 @@ onMounted(loadWithCache);
             :key="song.id"
             class="song-card"
             @dblclick="playFromSource(section, index)"
+            @contextmenu="openSongMenu(song, $event)"
           >
             <div class="song-cover">
               <CachedImage v-if="song.cover" :src="song.cover" class="cover-img" />
