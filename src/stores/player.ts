@@ -18,6 +18,8 @@ export const usePlayerStore = defineStore("player", () => {
 
   const queue = ref<QueueItem[]>([]);
   const currentIndex = ref(-1);
+  /** 随机模式下的「原始播放列表」备份，切回其他模式时用于恢复顺序 */
+  const originalQueue = ref<QueueItem[]>([]);
   const mode = ref<PlayMode>("loop-all");
   const playing = ref(false);
   const loading = ref(false);
@@ -43,6 +45,71 @@ export const usePlayerStore = defineStore("player", () => {
       ? queue.value[currentIndex.value].track
       : null,
   );
+
+  /* ------------------------------ 随机播放 ------------------------------ */
+
+  /** Fisher-Yates 洗牌（返回新数组，不改动入参） */
+  function shuffled<T>(items: T[]): T[] {
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
+
+  /** 当前曲目在队列中的条目 uid */
+  function currentUid(): string | null {
+    return queue.value[currentIndex.value]?.uid ?? null;
+  }
+
+  /** 深拷贝条目列表（uid 与曲目引用保持不变） */
+  function cloneItems(items: QueueItem[]): QueueItem[] {
+    return items.map((item) => ({ uid: item.uid, track: item.track }));
+  }
+
+  /** 备份当前队列为「原始播放列表」 */
+  function snapshotOriginal(source: QueueItem[] = queue.value): void {
+    originalQueue.value = cloneItems(source);
+  }
+
+  /** 打乱当前队列，并让正在播放的曲目跟随到新位置（不中断播放） */
+  function shuffleQueue(): void {
+    const uid = currentUid();
+    queue.value = shuffled(queue.value);
+    if (uid) {
+      const index = queue.value.findIndex((item) => item.uid === uid);
+      if (index >= 0) currentIndex.value = index;
+    }
+  }
+
+  /** 一轮播完后：基于原始列表重新洗牌并从头开始 */
+  function reshuffleFromOriginal(): void {
+    const lastUid = currentUid();
+    const source = originalQueue.value.length ? originalQueue.value : queue.value;
+    const reordered = shuffled(source);
+    // 尽量不以刚播完的曲目开头，避免连续重复
+    if (reordered.length > 1 && reordered[0].uid === lastUid) {
+      const swapWith = 1 + Math.floor(Math.random() * (reordered.length - 1));
+      [reordered[0], reordered[swapWith]] = [reordered[swapWith], reordered[0]];
+    }
+    queue.value = reordered;
+    currentIndex.value = 0;
+  }
+
+  /** 恢复原始播放列表顺序，并让正在播放的曲目跟随（离开随机模式时调用） */
+  function restoreOriginal(): void {
+    if (originalQueue.value.length) {
+      const uid = currentUid();
+      const restored = cloneItems(originalQueue.value);
+      queue.value = restored;
+      if (uid) {
+        const index = restored.findIndex((item) => item.uid === uid);
+        if (index >= 0) currentIndex.value = index;
+      }
+    }
+    originalQueue.value = [];
+  }
 
   /* ------------------------------ 引擎事件 ------------------------------ */
 
@@ -108,8 +175,19 @@ export const usePlayerStore = defineStore("player", () => {
   /** 用一组曲目替换队列并从指定索引播放 */
   async function playTracks(tracks: UnifiedTrack[], startIndex = 0): Promise<void> {
     if (!tracks.length) return;
-    queue.value = tracks.map((track) => ({ uid: createQueueUid(), track }));
-    await playAt(Math.min(Math.max(0, startIndex), tracks.length - 1));
+    const items: QueueItem[] = tracks.map((track) => ({ uid: createQueueUid(), track }));
+    const safeStart = Math.min(Math.max(0, startIndex), items.length - 1);
+    if (mode.value === "shuffle") {
+      // 新的播放上下文：以传入顺序作为原始列表备份，再洗牌播放目标曲目
+      const targetUid = items[safeStart].uid;
+      snapshotOriginal(items);
+      queue.value = shuffled(items);
+      const index = queue.value.findIndex((item) => item.uid === targetUid);
+      await playAt(index >= 0 ? index : 0);
+      return;
+    }
+    queue.value = items;
+    await playAt(safeStart);
   }
 
   /** 将曲目追加到队列尾部（不在队列时） */
@@ -120,7 +198,10 @@ export const usePlayerStore = defineStore("player", () => {
       const key = trackUid(track);
       if (existing.has(key)) continue;
       existing.add(key);
-      queue.value.push({ uid: createQueueUid(), track });
+      const item: QueueItem = { uid: createQueueUid(), track };
+      queue.value.push(item);
+      // 随机模式下同步备份（追加到末尾，保持原始相对顺序）
+      if (mode.value === "shuffle") originalQueue.value.push({ uid: item.uid, track });
       added += 1;
     }
     if (added) {
@@ -141,7 +222,18 @@ export const usePlayerStore = defineStore("player", () => {
     if (queue.value.length && currentIndex.value >= 0) {
       // 插入到当前曲目之后
       const insertAt = currentIndex.value + 1;
-      queue.value.splice(insertAt, 0, { uid: createQueueUid(), track });
+      const anchorUid = currentUid();
+      const item: QueueItem = { uid: createQueueUid(), track };
+      queue.value.splice(insertAt, 0, item);
+      if (mode.value === "shuffle") {
+        // 备份中同步插入到当前曲目之后；找不到锚点时追加到末尾
+        const anchorIndex = anchorUid
+          ? originalQueue.value.findIndex((entry) => entry.uid === anchorUid)
+          : -1;
+        const backupItem: QueueItem = { uid: item.uid, track };
+        if (anchorIndex >= 0) originalQueue.value.splice(anchorIndex + 1, 0, backupItem);
+        else originalQueue.value.push(backupItem);
+      }
       await playAt(insertAt);
     } else {
       await playTracks([track], 0);
@@ -187,25 +279,19 @@ export const usePlayerStore = defineStore("player", () => {
 
   async function next(auto = false): Promise<void> {
     if (!queue.value.length) return;
-    if (mode.value === "shuffle") {
-      if (queue.value.length === 1) {
-        await playAt(0);
-        return;
-      }
-      let index = currentIndex.value;
-      while (index === currentIndex.value) {
-        index = Math.floor(Math.random() * queue.value.length);
-      }
-      await playAt(index);
-      return;
-    }
     let index = currentIndex.value + 1;
     if (index >= queue.value.length) {
-      if (mode.value === "sequential" && auto) {
+      if (mode.value === "shuffle") {
+        // 一轮播完：重新洗牌后从头继续
+        reshuffleFromOriginal();
+        persistQueue();
+        index = 0;
+      } else if (mode.value === "sequential" && auto) {
         playing.value = false;
         return;
+      } else {
+        index = 0;
       }
-      index = 0;
     }
     await playAt(index);
   }
@@ -247,10 +333,24 @@ export const usePlayerStore = defineStore("player", () => {
     await setSetting("player.muted", muted.value);
   }
 
+  /** 切换播放模式；进入随机时备份并打乱，离开随机时恢复原始顺序 */
+  function setMode(next: PlayMode): void {
+    if (next === mode.value) return;
+    const from = mode.value;
+    mode.value = next;
+    if (next === "shuffle") {
+      snapshotOriginal();
+      shuffleQueue();
+    } else if (from === "shuffle") {
+      restoreOriginal();
+    }
+    persistQueue();
+    void setSetting("player.mode", mode.value);
+  }
+
   function cycleMode(): void {
     const index = MODE_ORDER.indexOf(mode.value);
-    mode.value = MODE_ORDER[(index + 1) % MODE_ORDER.length];
-    void setSetting("player.mode", mode.value);
+    setMode(MODE_ORDER[(index + 1) % MODE_ORDER.length]);
   }
 
   /* ------------------------------ 队列管理 ------------------------------ */
@@ -259,6 +359,9 @@ export const usePlayerStore = defineStore("player", () => {
     const index = queue.value.findIndex((item) => item.uid === uid);
     if (index < 0) return;
     queue.value.splice(index, 1);
+    // 随机模式下同步移除备份中的对应条目
+    const backupIndex = originalQueue.value.findIndex((item) => item.uid === uid);
+    if (backupIndex >= 0) originalQueue.value.splice(backupIndex, 1);
     if (index < currentIndex.value) {
       currentIndex.value -= 1;
     } else if (index === currentIndex.value) {
@@ -277,6 +380,7 @@ export const usePlayerStore = defineStore("player", () => {
 
   function clearQueue(): void {
     queue.value = [];
+    originalQueue.value = [];
     currentIndex.value = -1;
     loadedTrackKey = null;
     engine.stop();
@@ -289,13 +393,30 @@ export const usePlayerStore = defineStore("player", () => {
     if (from === to || from < 0 || to < 0 || from >= queue.value.length || to >= queue.value.length) {
       return;
     }
-    const currentUid = currentTrack.value ? queue.value[currentIndex.value]?.uid : null;
+    const currentItemUid = currentTrack.value ? queue.value[currentIndex.value]?.uid : null;
     const [item] = queue.value.splice(from, 1);
     queue.value.splice(to, 0, item);
-    if (currentUid) {
-      currentIndex.value = queue.value.findIndex((entry) => entry.uid === currentUid);
+    // 随机模式下同步备份：把条目移到其新后位之前，尽量保留其余相对顺序
+    if (mode.value === "shuffle") {
+      moveBackupItem(item.uid, queue.value[to + 1]?.uid ?? null);
+    }
+    if (currentItemUid) {
+      currentIndex.value = queue.value.findIndex((entry) => entry.uid === currentItemUid);
     }
     persistQueue();
+  }
+
+  /** 拖动排序时同步原始列表备份 */
+  function moveBackupItem(uid: string, nextUid: string | null): void {
+    const fromIndex = originalQueue.value.findIndex((item) => item.uid === uid);
+    if (fromIndex < 0) return;
+    const [entry] = originalQueue.value.splice(fromIndex, 1);
+    let insertAt = originalQueue.value.length;
+    if (nextUid) {
+      const nextIndex = originalQueue.value.findIndex((item) => item.uid === nextUid);
+      if (nextIndex >= 0) insertAt = nextIndex;
+    }
+    originalQueue.value.splice(insertAt, 0, entry);
   }
 
   /* ------------------------------ 歌词 ------------------------------ */
@@ -322,9 +443,10 @@ export const usePlayerStore = defineStore("player", () => {
     window.clearTimeout(persistTimer);
     persistTimer = window.setTimeout(() => {
       const snapshot = {
-        tracks: queue.value.map((item) => item.track),
+        items: queue.value.map((item) => ({ uid: item.uid, track: item.track })),
         index: currentIndex.value,
         mode: mode.value,
+        originalItems: originalQueue.value.map((item) => ({ uid: item.uid, track: item.track })),
       };
       void setSetting("player.queue", snapshot);
     }, 600);
@@ -342,16 +464,30 @@ export const usePlayerStore = defineStore("player", () => {
     engine.muted = muted.value;
 
     const snapshot = await getSetting<{
+      /** 兼容旧版仅存曲目列表的格式 */
       tracks?: UnifiedTrack[];
+      items?: { uid: string; track: UnifiedTrack }[];
       index?: number;
+      originalItems?: { uid: string; track: UnifiedTrack }[];
     } | null>("player.queue", null);
-    if (snapshot?.tracks?.length) {
-      queue.value = snapshot.tracks.map((track) => ({ uid: createQueueUid(), track }));
-      currentIndex.value = Math.min(Math.max(0, snapshot.index ?? 0), queue.value.length - 1);
+
+    const items = snapshot?.items?.length
+      ? snapshot.items.map((item) => ({ uid: item.uid, track: item.track }))
+      : (snapshot?.tracks ?? []).map((track) => ({ uid: createQueueUid(), track }));
+
+    if (items.length) {
+      queue.value = items;
+      currentIndex.value = Math.min(Math.max(0, snapshot?.index ?? 0), queue.value.length - 1);
       duration.value = queue.value[currentIndex.value].track.duration
         ? queue.value[currentIndex.value].track.duration! / 1000
         : 0;
     }
+
+    // 恢复随机模式的原始列表备份，供切回普通模式时还原顺序
+    originalQueue.value =
+      mode.value === "shuffle"
+        ? (snapshot?.originalItems ?? []).map((item) => ({ uid: item.uid, track: item.track }))
+        : [];
   }
 
   return {
