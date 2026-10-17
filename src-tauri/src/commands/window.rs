@@ -3,7 +3,10 @@
 //! 通过 window-vibrancy 调 DWM 接口给主窗口加系统级云母/亚克力材质；
 //! 前端在材质生效时把主背景（--wp-base）换成半透明色让材质透出，
 //! 并以 `<html data-material>` 同步实际生效的材质供 CSS 选择。
+//!
+//! 非 Windows 平台没有 DWM，命令保留但恒返回 "none"。
 
+#[cfg(windows)]
 use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_mica};
 
 /// 应用窗口材质（kind: "mica" | "acrylic" | "none"）。
@@ -33,4 +36,15 @@ pub fn window_set_material(
         _ => "none",
     };
     Ok(applied.to_string())
+}
+
+/// 非 Windows 平台：无 DWM 材质，恒返回 "none"。
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn window_set_material(
+    _window: tauri::Window,
+    _kind: String,
+    _dark: Option<bool>,
+) -> Result<String, String> {
+    Ok("none".to_string())
 }
