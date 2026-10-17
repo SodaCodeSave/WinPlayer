@@ -328,21 +328,40 @@ pub fn cover_cache_path(app: tauri::AppHandle, url: String) -> Option<String> {
     tauri::Url::from_file_path(path).ok().map(|uri| uri.to_string())
 }
 
-/// 提取封面主色（跟随封面的动态强调色用）：仅查磁盘缓存、**不联网下载**——
-/// 封面在界面上展示时已由 cachedimg 协议落盘，取色紧跟其后，缓存基本必命中；
-/// 未命中（如刚切歌还没下完）返回 null，前端保持上一次强调色。
-/// 返回 "#rrggbb"。
+/// 提取封面主色（跟随封面的动态强调色用）：优先读磁盘缓存；
+/// 刚切歌时封面可能仍由 cachedimg 协议在下载中，这里等待下载完成（上限 15s）
+/// 再取色，仍拿不到返回 null，前端保持当前强调色。返回 "#rrggbb"。
 #[tauri::command]
 pub async fn cover_dominant_color(app: tauri::AppHandle, url: String) -> Option<String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return None;
     }
     let path = image_path(&app, &url).ok()?;
-    let bytes = tokio::fs::read(path).await.ok()?;
-    // 解码取色是 CPU 操作，放阻塞线程池避免卡异步运行时
-    tokio::task::spawn_blocking(move || dominant_color_hex(&bytes))
-        .await
-        .ok()?
+    let hash = hash_url(&url);
+    // 展示请求与取色请求几乎同时发出：先稍等一下让协议侧把下载挂进 inflight
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Ok(bytes) = tokio::fs::read(&path).await {
+            // 解码取色是 CPU 操作，放阻塞线程池避免卡异步运行时
+            return tokio::task::spawn_blocking(move || dominant_color_hex(&bytes))
+                .await
+                .ok()
+                .flatten();
+        }
+        let notify = inflight().lock().expect("inflight lock poisoned").get(&hash).cloned();
+        match notify {
+            // 有下载在进行：等它完成通知后重读磁盘
+            Some(notify) => {
+                let _ = tokio::time::timeout(Duration::from_secs(2), notify.notified()).await;
+            }
+            // 没有下载在进行且磁盘无文件（下载失败 / 非缓存图源）→ 放弃
+            None => return None,
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return None;
+        }
+    }
 }
 
 /// 饱和度加权主色提取：跳过近黑/近白/低饱和像素避免被背景色淹没，

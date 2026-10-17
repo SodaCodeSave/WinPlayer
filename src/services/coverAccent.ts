@@ -37,10 +37,19 @@ export async function refreshAccentFromCover(
     return;
   }
   const url = resolveImgUrl(cover);
-  const hex = url
-    ? await invoke<string | null>("cover_dominant_color", { url }).catch(() => null)
-    : null;
+  const hex = url ? await extractColor(url) : null;
   if (hex) applyAccent(hex);
+}
+
+/** 提取主色；封面没落盘（如「图片缓存」已关闭）时先预取进缓存再取一次 */
+async function extractColor(url: string): Promise<string | null> {
+  const first = await invoke<string | null>("cover_dominant_color", { url }).catch(() => null);
+  if (first) return first;
+  const prefetched = await invoke("image_cache_prefetch", { url })
+    .then(() => true)
+    .catch(() => false);
+  if (!prefetched) return null;
+  return invoke<string | null>("cover_dominant_color", { url }).catch(() => null);
 }
 
 /** 把主色换算成整套强调色变量：hover/active 依亮暗主题做亮/暗偏移 */
