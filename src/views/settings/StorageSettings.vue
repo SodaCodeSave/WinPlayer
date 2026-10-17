@@ -1,14 +1,43 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { ComboBox } from "winuionweb";
 import { toast } from "@/services/toast";
 import { clearDataCache, dataCacheSize } from "@/services/cache";
+import { useSettingsStore, type CachePolicy } from "@/stores/settings";
+
+const settings = useSettingsStore();
 
 /** 缓存占用（进入本页与清理后重新统计） */
 const imageCount = ref(0);
 const imageBytes = ref(0);
 const dataBytes = ref(0);
 const cacheLoading = ref(false);
+
+/* ------------------------------ 缓存项 ------------------------------ */
+
+const CACHE_OPTIONS: Array<{ label: string; value: CachePolicy }> = [
+  { label: "歌单", value: "playlist" },
+  { label: "图片", value: "images" },
+  { label: "歌单与图片", value: "both" },
+  { label: "不缓存", value: "none" },
+];
+
+const cacheLabels = computed(() => CACHE_OPTIONS.map((option) => option.label));
+
+const cacheIndex = computed(() =>
+  CACHE_OPTIONS.findIndex((option) => option.value === settings.cachePolicy),
+);
+
+function onCachePolicyChange(_sender: unknown, payload?: { AddedItems?: unknown[] }): void {
+  const label = String(payload?.AddedItems?.[0] ?? "");
+  const option = CACHE_OPTIONS.find((entry) => entry.label === label);
+  if (option && option.value !== settings.cachePolicy) {
+    void settings.setCachePolicy(option.value);
+    toast("缓存设置已更新，已清除被关闭类型的缓存", "success");
+    void refreshCacheStats();
+  }
+}
 
 interface CacheStats {
   imageCount: number;
@@ -70,6 +99,20 @@ onMounted(() => {
     <!-- 存储与缓存 -->
     <section class="settings-section">
       <h2 class="settings-section-title">存储与缓存</h2>
+      <div class="settings-card">
+        <div class="card-content">
+          <div class="card-header">缓存项</div>
+          <div class="card-description">
+            选择需要缓存的内容。歌单指页面数据（主页推荐、歌单/专辑/歌手详情等），图片指封面等磁盘缓存；切换后立即清除被关闭类型的已有缓存。
+          </div>
+        </div>
+        <ComboBox
+          class="card-control"
+          :ItemsSource="cacheLabels"
+          :SelectedIndex="cacheIndex"
+          @SelectionChanged="onCachePolicyChange"
+        />
+      </div>
       <div class="settings-card">
         <div class="card-content">
           <div class="card-header">清除缓存</div>

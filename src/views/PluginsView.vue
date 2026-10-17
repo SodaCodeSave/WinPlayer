@@ -368,11 +368,15 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** 市场条目相对本地插件的状态：未安装 / 本地版本更低可更新 / 已是最新 */
-function marketStatus(entry: MarketEntry): "none" | "updatable" | "latest" {
+/**
+ * 市场条目相对本地插件的状态：
+ * 未安装 / 本地版本更低可更新 / 已是最新 / 版本未知（源头解析失败，仅提供重新安装）
+ */
+function marketStatus(entry: MarketEntry): "none" | "updatable" | "latest" | "unknown" {
   const local = localVersionOf(entry);
   if (!local) return "none";
-  return compareVersions(local, String(entry.version ?? "0")) < 0 ? "updatable" : "latest";
+  if (!entry.version) return "unknown";
+  return compareVersions(local, String(entry.version)) < 0 ? "updatable" : "latest";
 }
 
 const installingId = ref("");
@@ -625,19 +629,27 @@ onUnmounted(() => {
                 class="market-version"
                 :title="marketStatus(entry) === 'updatable' ? `本地 v${localVersionOf(entry)}` : ''"
               >
-                v{{ entry.version }}
+                {{ entry.version ? `v${entry.version}` : "版本未知" }}
               </span>
               <div class="market-actions">
                 <button class="wp-standard-button small" @click="openEntrySource(entry)">
                   来源
                 </button>
                 <button
-                  v-if="marketStatus(entry) !== 'latest'"
+                  v-if="marketStatus(entry) === 'updatable' || marketStatus(entry) === 'none'"
                   class="wp-accent-button small"
                   :disabled="installingId === entry.id + entry.url"
                   @click="installFromMarket(entry)"
                 >
                   {{ installingId === entry.id + entry.url ? "安装中…" : marketStatus(entry) === "updatable" ? "更新" : "安装" }}
+                </button>
+                <button
+                  v-else-if="marketStatus(entry) === 'unknown'"
+                  class="wp-standard-button small"
+                  :disabled="installingId === entry.id + entry.url"
+                  @click="installFromMarket(entry)"
+                >
+                  {{ installingId === entry.id + entry.url ? "安装中…" : "重新安装" }}
                 </button>
                 <button v-else class="wp-standard-button small" @click="uninstallFromMarket(entry)">
                   卸载

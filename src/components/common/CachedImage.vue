@@ -12,6 +12,7 @@
  */
 import { computed, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { isImageCacheEnabled } from "@/services/imageCache";
 
 const props = defineProps<{ src?: string; alt?: string }>();
 
@@ -31,20 +32,21 @@ function originalOf(url: string): string | null {
 }
 
 type Stage = "cache" | "remote" | "none";
-const stage = ref<Stage>("cache");
+// 图片缓存被禁用时初始即走远程原图（如历史数据里已存有缓存协议地址也能解出原图）
+const stage = ref<Stage>(isImageCacheEnabled() ? "cache" : "remote");
 
-// 换图时重置降级进度
+// 换图时重置降级进度；图片缓存被禁用时直接走远程原图
 watch(
   () => props.src,
   () => {
-    stage.value = "cache";
+    stage.value = isImageCacheEnabled() ? "cache" : "remote";
   },
 );
 
 const displaySrc = computed(() => {
   if (!props.src || stage.value === "none") return "";
   if (stage.value === "cache") return props.src;
-  return originalOf(props.src) ?? "";
+  return originalOf(props.src) ?? props.src;
 });
 
 async function onError(): Promise<void> {

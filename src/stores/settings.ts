@@ -2,8 +2,10 @@
 
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { getSetting, setSetting } from "@/services/db";
 import { getAudioEngine } from "@/services/audio";
+import { clearDataCache } from "@/services/cache";
 import {
   EQ_CUSTOM_PRESET_ID,
   EQ_PRESETS,
@@ -13,6 +15,9 @@ import {
 import type { MarketSource } from "@/types/plugin";
 
 export type ThemePreference = "system" | "light" | "dark";
+
+/** 「缓存项」策略：歌单（页面数据）/ 图片，可组合或全关 */
+export type CachePolicy = "playlist" | "images" | "both" | "none";
 
 /** 「来源偏好」默认值：空串表示不指定插件，由系统按当前逻辑自动决定 */
 export type SourcePreference = string;
@@ -45,6 +50,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const eqGains = ref<number[]>([...FLAT_GAINS]);
   /** 全局字体（CSS font-family 值，空串 = 使用默认字体） */
   const fontFamily = ref("");
+  /** 缓存项策略：歌单（页面数据）/ 图片缓存开关组合 */
+  const cachePolicy = ref<CachePolicy>("both");
   const loaded = ref(false);
 
   /** 系统配色查询：winuionweb 的暗色控件变量只认 html 上的 theme-dark 类，
@@ -97,6 +104,7 @@ export const useSettingsStore = defineStore("settings", () => {
     eqPreset.value = await getSetting<string>("settings.eqPreset", "flat");
     eqGains.value = await getSetting<number[]>("settings.eqGains", [...FLAT_GAINS]);
     fontFamily.value = await getSetting<string>("settings.fontFamily", "");
+    cachePolicy.value = await getSetting<CachePolicy>("settings.cachePolicy", "both");
     applyTheme();
     applyFont();
     // 启动时把均衡器配置应用到原生引擎
@@ -129,6 +137,19 @@ export const useSettingsStore = defineStore("settings", () => {
   async function setSmtcEnabled(value: boolean): Promise<void> {
     smtcEnabled.value = value;
     await setSetting("settings.smtcEnabled", value);
+  }
+
+  /** 切换缓存项策略：立即清除新被关闭类型的已有缓存 */
+  async function setCachePolicy(value: CachePolicy): Promise<void> {
+    const prev = cachePolicy.value;
+    cachePolicy.value = value;
+    await setSetting("settings.cachePolicy", value);
+    const wasPlaylist = prev === "both" || prev === "playlist";
+    const wasImages = prev === "both" || prev === "images";
+    const isPlaylist = value === "both" || value === "playlist";
+    const isImages = value === "both" || value === "images";
+    if (wasPlaylist && !isPlaylist) await clearDataCache();
+    if (wasImages && !isImages) await invoke("cache_clear").catch(() => {});
   }
 
   /** 通用来源偏好写入（四个来源选择框共用） */
@@ -195,6 +216,7 @@ export const useSettingsStore = defineStore("settings", () => {
     marketSources,
     githubMirror,
     smtcEnabled,
+    cachePolicy,
     trackSourceId,
     playSourceId,
     lyricsSourceId,
@@ -210,6 +232,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setMarketSources,
     setGithubMirror,
     setSmtcEnabled,
+    setCachePolicy,
     setSourcePreference,
     setSourceSearchFormat,
     setEqEnabled,

@@ -6,6 +6,7 @@
  */
 
 import { getDb, getSetting, setSetting } from "@/services/db";
+import type { CachePolicy } from "@/stores/settings";
 
 interface CacheEntry<T> {
   savedAt: number;
@@ -14,6 +15,16 @@ interface CacheEntry<T> {
 
 const KEY_PREFIX = "cache.data.";
 
+/** 当前策略下是否允许页面数据（歌单类）缓存（直接读库，避免与 settings store 循环依赖） */
+async function dataCacheAllowed(): Promise<boolean> {
+  try {
+    const policy = await getSetting<CachePolicy>("settings.cachePolicy", "both");
+    return policy === "both" || policy === "playlist";
+  } catch {
+    return true;
+  }
+}
+
 export interface CachedData<T> {
   savedAt: number;
   data: T;
@@ -21,6 +32,7 @@ export interface CachedData<T> {
 
 /** 读取缓存数据，不存在或损坏时返回 null（读取失败静默降级为无缓存） */
 export async function getCachedData<T>(key: string): Promise<CachedData<T> | null> {
+  if (!(await dataCacheAllowed())) return null;
   try {
     const entry = await getSetting<CacheEntry<T> | null>(KEY_PREFIX + key, null);
     if (!entry || typeof entry.savedAt !== "number") return null;
@@ -30,8 +42,9 @@ export async function getCachedData<T>(key: string): Promise<CachedData<T> | nul
   }
 }
 
-/** 写入缓存数据（写入失败不影响主流程） */
+/** 写入缓存数据（写入失败不影响主流程；策略关闭歌单缓存时跳过） */
 export async function setCachedData<T>(key: string, data: T): Promise<void> {
+  if (!(await dataCacheAllowed())) return;
   try {
     await setSetting(KEY_PREFIX + key, { savedAt: Date.now(), data });
   } catch {

@@ -588,7 +588,47 @@ export const usePluginsStore = defineStore("plugins", () => {
     return [OFFICIAL_MARKET_SOURCE, ...rest];
   }
 
-  /** 拉取所有市场源的索引，合并为可安装条目列表（GitHub 系地址走镜像） */
+  /**
+   * 识别 GitHub 仓库地址，返回仓库内 manifest.json 的 raw 候选地址（用于解析真实版本）。
+   * 仓库根地址依次尝试 main / master 默认分支；/tree/{branch} 地址用指定分支。
+   */
+  function rawManifestCandidates(url: string): string[] {
+    if (!url.startsWith("https://github.com/")) return [];
+    const segs = url
+      .slice("https://github.com/".length)
+      .replace(/\/+$/, "")
+      .split("/");
+    if (segs.length < 2 || !segs[0] || !segs[1]) return [];
+    const base = `https://raw.githubusercontent.com/${segs[0]}/${segs[1]}`;
+    if (segs[2] === "tree" && segs.length > 3) {
+      const branch = segs.slice(3).join("/");
+      return branch ? [`${base}/${branch}/manifest.json`] : [];
+    }
+    if (segs.length !== 2) return [];
+    return [`${base}/main/manifest.json`, `${base}/master/manifest.json`];
+  }
+
+  /** 从插件源头解析版本号：GitHub 仓库地址拉仓库 manifest.json 的 version，其余或失败返回 undefined */
+  async function resolvePluginVersion(url: string, mirror: string): Promise<string | undefined> {
+    for (const rawUrl of rawManifestCandidates(url)) {
+      try {
+        const manifest = await httpFetchJson<{ version?: unknown }>(
+          applyGithubMirror(rawUrl, mirror),
+          10_000,
+        );
+        if (typeof manifest.version === "string" && manifest.version) return manifest.version;
+      } catch {
+        /* 尝试下一个候选分支 */
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * 拉取所有市场源的索引，合并为可安装条目列表（GitHub 系地址走镜像）。
+   * 版本号不取自市场索引，而是从插件源头解析（GitHub 仓库拉 manifest.json），
+   * 直链 zip/json 或解析失败时版本未知。
+   */
   async function fetchMarketEntries(): Promise<MarketEntry[]> {
     const mirror = settingsStore.githubMirror;
     const results = await Promise.allSettled(
@@ -597,6 +637,8 @@ export const usePluginsStore = defineStore("plugins", () => {
         return (index.plugins ?? []).map((entry) => ({
           ...entry,
           sourceName: source.name,
+          // 索引中的 version 字段已废弃，版本号一律从插件源头解析
+          version: undefined,
           // banner 支持相对索引地址的相对路径；GitHub 系图片同样走镜像
           banner: entry.banner
             ? applyGithubMirror(resolveAssetUrl(source.url, entry.banner), mirror)
@@ -608,6 +650,11 @@ export const usePluginsStore = defineStore("plugins", () => {
     for (const result of results) {
       if (result.status === "fulfilled") entries.push(...result.value);
     }
+    await Promise.all(
+      entries.map(async (entry) => {
+        entry.version = await resolvePluginVersion(entry.url, mirror);
+      }),
+    );
     return entries;
   }
 

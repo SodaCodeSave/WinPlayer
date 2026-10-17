@@ -401,7 +401,12 @@ export interface MarketSource {
 export interface MarketEntry {
   id: string;
   name: string;
-  version: string;
+  /**
+   * 插件版本。市场索引不再提供此字段，由宿主从插件源头解析：
+   * GitHub 仓库地址拉仓库内 manifest.json 的 version；直链 zip/json
+   * 或解析失败时为 undefined（界面显示「版本未知」，提供重新安装按钮）
+   */
+  version?: string;
   description?: string;
   author?: string;
   /** 卡片大图地址（支持相对市场索引的相对路径），缺省时显示渐变占位 */
