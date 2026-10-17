@@ -236,19 +236,20 @@ jobs:
         run: |
           NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/*/ | sort -V | tail -1)
           SYSROOT="${NDK_DIR}toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
-          declare -A ABIS=(
-            [aarch64-linux-android]=arm64-v8a
-            [armv7a-linux-androideabi]=armeabi-v7a
-            [i686-linux-android]=x86
-            [x86_64-linux-android]=x86_64
-          )
-          for triple in "${!ABIS[@]}"; do
-            abi="${ABIS[$triple]}"
-            dest="src-tauri/gen/android/app/src/main/jniLibs/$abi"
+          # NDK 各版本的 triple 目录命名有差异（如 r30 的 armv7 目录名），
+          # 用 find 按 glob 定位 libc++_shared.so，避免硬编码路径失效
+          bundle() {
+            lib=$(find "$SYSROOT" -path "*$2/libc++_shared.so" -print -quit 2>/dev/null)
+            if [ -z "$lib" ]; then echo "libc++_shared.so not found for $1"; exit 1; fi
+            dest="src-tauri/gen/android/app/src/main/jniLibs/$1"
             mkdir -p "$dest"
-            cp "$SYSROOT/$triple/libc++_shared.so" "$dest/"
-            echo "bundled libc++_shared.so -> $abi"
-          done
+            cp "$lib" "$dest/"
+            echo "bundled $lib -> $dest"
+          }
+          bundle arm64-v8a "aarch64-linux-android"
+          bundle armeabi-v7a "arm*linux-androideabi"
+          bundle x86 "i686-linux-android"
+          bundle x86_64 "x86_64-linux-android"
 
       # 优先使用 Secret 中的固定 debug 密钥（ANDROID_DEBUG_KEYSTORE_BASE64）；
       # 未配置时现场生成并作为 Artifact 上传，下载一次回填为 Secret 后签名即固定
