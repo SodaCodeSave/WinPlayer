@@ -11,6 +11,9 @@
 //! 让安装程序能够替换正在使用的文件。
 
 use std::path::Path;
+
+// 仅桌面端的安装实现会拉起子进程（Windows 安装器 / macOS、Linux 脚本），Android 用不到
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 use std::process::{Command, Stdio};
 
 use tauri::{AppHandle, Runtime};

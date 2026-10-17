@@ -4,9 +4,12 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application>
-        <!-- 把应用私有目录中的 APK 暴露给系统安装器（只读、需显式授予 URI 权限） -->
+        <!-- 把应用私有目录中的 APK 暴露给系统安装器（只读、需显式授予 URI 权限）。
+
+             用本插件专属的 FileProvider 子类而非 androidx.core.content.FileProvider，
+             避免与 Tauri 模板在应用清单里声明的同名 provider 在合并时冲突。 -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="app.tauri.apkinstaller.ApkFileProvider"
             android:authorities="app.tauri.apkinstaller.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
