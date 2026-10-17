@@ -18,10 +18,20 @@ const ACCENT_VARS = [
   "--wp-accent-text",
 ] as const;
 
+/** winuionweb 组件库（Slider/开关/按钮等）自带的强调色变量，需同步覆盖才会变色 */
+const WUI_ACCENT_VARS = [
+  "--accent-base",
+  "--accent-hover",
+  "--accent-pressed",
+  "--accent-aa-fill",
+  "--accent-aa-text",
+  "--accent-text",
+] as const;
+
 /** 清除封面取色覆盖，恢复主题默认强调色 */
 export function clearAccent(): void {
   const style = document.documentElement.style;
-  for (const name of ACCENT_VARS) style.removeProperty(name);
+  for (const name of [...ACCENT_VARS, ...WUI_ACCENT_VARS]) style.removeProperty(name);
 }
 
 /**
@@ -65,12 +75,21 @@ function applyAccent(hex: string): void {
   const dir = dark ? -1 : 1;
   const [r, g, b] = rgb;
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const text = luminance > 0.55 ? "#000000" : "#ffffff";
   const style = root.style;
   style.setProperty("--wp-accent", hex);
   style.setProperty("--wp-accent-hover", shiftLightness(hex, 0.07 * dir));
   style.setProperty("--wp-accent-active", shiftLightness(hex, 0.14 * dir));
   style.setProperty("--wp-accent-light", `rgba(${r}, ${g}, ${b}, ${dark ? 0.14 : 0.1})`);
-  style.setProperty("--wp-accent-text", luminance > 0.55 ? "#000000" : "#ffffff");
+  style.setProperty("--wp-accent-text", text);
+  // winuionweb 组件库的强调色（进度条/音量条填充、开关、AA 对比色等）；
+  // hover/pressed 的 alpha 后缀对齐组件库默认值（e6 / cc）
+  style.setProperty("--accent-base", hex);
+  style.setProperty("--accent-hover", `${hex}e6`);
+  style.setProperty("--accent-pressed", `${hex}cc`);
+  style.setProperty("--accent-aa-fill", shiftLightness(hex, dark ? 0.18 : -0.18));
+  style.setProperty("--accent-aa-text", text);
+  style.setProperty("--accent-text", text);
 }
 
 function hexToRgb(hex: string): [number, number, number] | null {
