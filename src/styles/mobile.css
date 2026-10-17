@@ -209,3 +209,32 @@
   width: 40px;
   height: 40px;
 }
+
+/* ------------------------------ 对话框 / 软键盘 ------------------------------ */
+/* 对话框（ContentDialog）渲染在 .app-shell 之外、直接挂在 body 上，
+   因此用 html.is-mobile 作为钩子（main.ts 在移动端给 <html> 加类）。 */
+
+/* 输入控件字号 ≥16px，避免移动端聚焦时把页面整体放大 */
+html.is-mobile input,
+html.is-mobile textarea,
+html.is-mobile select,
+html.is-mobile .win-textbox-field {
+  font-size: 16px;
+}
+
+/* 对话框贴合移动端：宽度自适应、限制高度、内容区可滚动 */
+html.is-mobile .content-dialog {
+  width: min(92vw, 360px);
+  max-width: 92vw;
+  max-height: 82vh;
+}
+
+/* 顶部对齐 + 安全区：软键盘从底部弹出时不会遮住对话框里的输入框 */
+html.is-mobile .content-dialog-layout-root {
+  align-items: flex-start;
+  padding: max(var(--safe-area-top), 24px) 0 max(var(--safe-area-bottom), 24px);
+}
+
+html.is-mobile .content-dialog-content-scroll-viewer {
+  -webkit-overflow-scrolling: touch;
+}
