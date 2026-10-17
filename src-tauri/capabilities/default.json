@@ -15,6 +15,7 @@
     "core:event:default",
     "dialog:default",
     "opener:default",
+    "media-session:default",
     "sql:default",
     "sql:allow-load",
     "sql:allow-close",

@@ -21,6 +21,8 @@ pub fn run() {
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_fs::init())
             .plugin(tauri_plugin_opener::init())
+            // 安卓媒体控件（媒体通知/锁屏/线控），桌面端自动 no-op
+            .plugin(tauri_plugin_media_session::init())
             .plugin(
                 tauri_plugin_sql::Builder::default()
                     .add_migrations("sqlite:winplayer.db", db_migrations())

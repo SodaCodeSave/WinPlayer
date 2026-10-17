@@ -1,0 +1,24 @@
+[package]
+name = "tauri-plugin-media-session"
+version = "0.2.4"
+description = "Tauri plugin for mobile media session integration with lockscreen controls and album art (Android & iOS)."
+edition = "2021"
+rust-version = "1.77.2"
+links = "tauri-plugin-media-session"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/solrmax/tauri-plugin-media-session"
+readme = "README.md"
+keywords = ["tauri", "plugin", "media-session", "android", "ios"]
+categories = ["multimedia", "os::android-apis"]
+
+# Vendored from crates.io 0.2.4. Upstream repo is unavailable (404) and the
+# published crate forgot to register its JS commands in `invoke_handler`;
+# this local copy fixes that. See commands.rs.
+
+[dependencies]
+tauri = { version = "2", default-features = false, features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+tauri-plugin = { version = "2.0.2", features = ["build"] }
