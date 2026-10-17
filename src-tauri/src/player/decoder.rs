@@ -159,6 +159,22 @@ fn run_session(
     let mut last_progress = Instant::now();
     let mut was_buffering = false;
 
+    // 恢复会话（长时间空闲后重建输出流）可能带着上次播放位置：probe 完成
+    // 后立即定位，避免从 0 位置解码几十毫秒再跳转的瞬时爆音
+    if engine.is_active(id) {
+        if let Some(secs) = engine.take_pending_seek() {
+            let target = Time::from(secs);
+            if format
+                .seek(SeekMode::Coarse, SeekTo::Time { time: target, track_id: Some(track_id) })
+                .is_ok()
+            {
+                decoder.reset();
+                current_time = secs;
+                engine.emit_progress(current_time, duration_secs);
+            }
+        }
+    }
+
     loop {
         if engine.is_retired(id, generation) {
             return Ok(SessionOutcome::Superseded);

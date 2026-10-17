@@ -31,6 +31,14 @@ export const usePlayerStore = defineStore("player", () => {
   /** 当前已加载音频的曲目标识（用于判断是否需要解析直链） */
   let loadedTrackKey: string | null = null;
 
+  /** 长时间空闲（暂停 / 停止 / 播完）后恢复播放的阈值：超过则重新解析
+   * 直链并重载会话——平台音频流可能已被系统回收、直链也可能过期；与
+   * 后端 OUTPUT_IDLE_RESET（60s）保持一致 */
+  const IDLE_RELOAD_MS = 60_000;
+
+  /** 进入非播放状态的时刻（毫秒）；0 表示本轮尚未进入过空闲 */
+  let idleSince = 0;
+
   // 歌词
   const lyrics = ref<LyricLine[]>([]);
   const lyricsLoading = ref(false);
@@ -126,9 +134,11 @@ export const usePlayerStore = defineStore("player", () => {
   engine.on("playing", () => {
     playing.value = true;
     loading.value = false;
+    idleSince = 0;
   });
   engine.on("paused", () => {
     playing.value = false;
+    idleSince = Date.now();
   });
   engine.on("waiting", () => {
     loading.value = true;
@@ -258,6 +268,12 @@ export const usePlayerStore = defineStore("player", () => {
       return;
     }
     if (engine.paused) {
+      // 长时间空闲后恢复：旧音频输出流可能已被系统回收、直链也可能过期，
+      // 改为重新解析直链并重载会话（后端同时会重建输出流），而不是直接唤醒
+      if (idleSince > 0 && Date.now() - idleSince > IDLE_RELOAD_MS) {
+        await playAt(currentIndex.value);
+        return;
+      }
       try {
         await engine.play();
       } catch (error) {

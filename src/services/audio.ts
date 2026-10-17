@@ -97,7 +97,12 @@ export class AudioEngine {
           this.emit("paused");
         }
       });
-      await on("player://ended", () => this.emit("ended"));
+      await on("player://ended", () => {
+        // 自然播完后引擎已停止推进：复位暂停位，否则后续点播放会被当成
+        // 「暂停」处理（togglePlay 依赖 engine.paused 判断），一直不出声
+        this._paused = true;
+        this.emit("ended");
+      });
       await on("player://advanced", (payload) => {
         const url = (payload as { url?: string }).url;
         this.emit("advanced", typeof url === "string" ? url : "");

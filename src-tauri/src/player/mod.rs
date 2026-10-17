@@ -30,7 +30,7 @@ pub mod output;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -48,6 +48,11 @@ const EVENT_ERROR: &str = "player://error";
 
 /// 淡入淡出音量斜坡步进间隔
 const FADE_STEP: Duration = Duration::from_millis(50);
+
+/// 无音频活动的容忍时长：超过后认为平台音频流（Android 退后台、
+/// Windows 睡眠/设备切换）可能已被系统回收，需要重建输出流。
+/// 与前端 IDLE_RELOAD_MS 保持一致。
+const OUTPUT_IDLE_RESET: Duration = Duration::from_secs(60);
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -120,6 +125,10 @@ pub struct PlayerEngine {
     buffering: AtomicBool,
     /// 当前加载的 URL（seek 会话重建时需要）
     current_url: Mutex<Option<String>>,
+    /// 最近一次音频活动时刻（解码推进 / 加载）：用于判定输出流是否可能失效
+    last_active: Mutex<Instant>,
+    /// 最近一次上报的播放位置（秒）：长时间空闲后恢复会话时用于续播
+    last_position: Mutex<f64>,
     /// HTTP 客户端（长连接复用）
     client: reqwest::blocking::Client,
     /// EQ 主配置（仅承载开关/增益/版本；会话线程各自实例化滤波链——
@@ -155,6 +164,8 @@ impl PlayerEngine {
             is_playing: AtomicBool::new(false),
             buffering: AtomicBool::new(false),
             current_url: Mutex::new(None),
+            last_active: Mutex::new(Instant::now()),
+            last_position: Mutex::new(0.0),
             client,
             eq_master: EqChain::new(),
             crossfade: Mutex::new((true, 6.0)),
@@ -219,6 +230,55 @@ impl PlayerEngine {
         Ok(())
     }
 
+    /// 标记一次音频活动（解码推进 / 加载）
+    fn touch_active(&self) {
+        *self.last_active.lock().unwrap() = Instant::now();
+    }
+
+    /// 距最近一次音频活动的时长
+    fn output_idle(&self) -> Duration {
+        self.last_active.lock().unwrap().elapsed()
+    }
+
+    /// 长时间无音频活动后重建输出流：平台可能已回收设备会话（Android
+    /// 退后台 / Windows 睡眠 / 音频设备切换），旧流上的 Sink 不再被回调
+    /// 消费——继续复用会让解码线程阻塞在环形缓冲、进度冻结在 0。
+    /// 先尝试打开新流，成功才替换旧流（失败则沿用，避免变得更糟）。
+    fn refresh_output_if_idle(&self) {
+        if self.output_idle() < OUTPUT_IDLE_RESET {
+            return;
+        }
+        let Ok(fresh) = Output::open() else {
+            return;
+        };
+        // 旧 Output 在此被丢弃：keepalive 线程退出、设备会话释放
+        *self.output.lock().unwrap() = Some(fresh);
+    }
+
+    /// 长时间空闲后恢复播放：旧输出流与解码会话可能都已失效，且旧
+    /// RingSource 已绑定在死流上无法复用——重新加载当前 URL 建全新会话，
+    /// 并续播到上次位置。返回是否走了恢复路径。
+    fn recover_idle_session(self: &Arc<Self>) -> bool {
+        if self.output_idle() < OUTPUT_IDLE_RESET {
+            return false;
+        }
+        let Some(url) = self.current_url.lock().unwrap().clone() else {
+            // 无当前曲目：仅重建输出流并复位为 idle
+            self.refresh_output_if_idle();
+            self.is_playing.store(false, Ordering::Release);
+            self.touch_active();
+            self.emit_state("idle");
+            return true;
+        };
+        let position = *self.last_position.lock().unwrap();
+        self.load(url);
+        // load 会重置位置与播放位，这里恢复续播状态
+        *self.pending_seek.lock().unwrap() = Some(position);
+        *self.last_position.lock().unwrap() = position;
+        self.is_playing.store(true, Ordering::Release);
+        true
+    }
+
     /// 用新音源整体替换 Sink（旧 Sink 先 stop 再丢弃，防止混音器残留）
     fn install_sink(&self, source: output::RingSource) -> Result<(), String> {
         self.ensure_output()?;
@@ -252,6 +312,10 @@ impl PlayerEngine {
 
     /// 硬切换：终止一切旧会话与预加载，开始全新会话
     fn load(self: &Arc<Self>, url: String) {
+        // 长时间空闲后的首次加载：先换掉可能已被系统回收的输出流，
+        // 否则新 Sink 会挂在死流上一直不出声（进度冻结在 0）
+        self.refresh_output_if_idle();
+        self.touch_active();
         let generation = self.bump_generation();
         let id = self.bump_session();
         self.active.store(id, Ordering::Release);
@@ -261,6 +325,8 @@ impl PlayerEngine {
         self.buffering.store(false, Ordering::Release);
         self.is_playing.store(false, Ordering::Release);
         *self.current_url.lock().unwrap() = Some(url.clone());
+        // 新会话从 0 位置开始（恢复续播时由调用方重新写入目标位置）
+        *self.last_position.lock().unwrap() = 0.0;
         self.cancel_fade();
         // 立即清掉旧 Sink（旧音频静音），新 Sink 由解码线程装配
         if let Some(old) = self.sink.lock().unwrap().take() {
@@ -434,6 +500,10 @@ pub fn player_set_crossfade(engine: State<Arc<PlayerEngine>>, enabled: bool, sec
 #[tauri::command]
 pub fn player_play(engine: State<Arc<PlayerEngine>>) {
     engine.is_playing.store(true, Ordering::Release);
+    // 长时间空闲后恢复：输出流/会话可能已失效，重建会话并从上次位置续播
+    if engine.recover_idle_session() {
+        return;
+    }
     if let Some(sink) = engine.sink.lock().unwrap().as_ref() {
         sink.play();
     }
@@ -544,9 +614,11 @@ impl PlayerEngine {
     }
 
     pub(crate) fn emit_progress(&self, current_time: f64, duration: f64) {
-        let _ = self
-            .app
-            .emit(EVENT_PROGRESS, ProgressPayload { current_time, duration });
+        // 有进度推进 = 有音频活动（暂停时解码线程阻塞、不上报，
+        // 因此这是判定「输出流是否长时间闲置」的可靠信号）
+        *self.last_position.lock().unwrap() = current_time;
+        self.touch_active();
+        let _ = self.app.emit(EVENT_PROGRESS, ProgressPayload { current_time, duration });
     }
 
     pub(crate) fn emit_duration(&self, duration: f64) {
