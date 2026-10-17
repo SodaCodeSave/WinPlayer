@@ -55,3 +55,6 @@ src/assets/fonts/*.ttf
 Cargo.lock
 
 .trae/
+
+TODO.md
+pnpm-lock.yaml
