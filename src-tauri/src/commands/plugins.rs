@@ -270,9 +270,43 @@ fn install_from_single_json(
     })
 }
 
-/// 从本地路径安装：目录 → 直接复制；.zip → 解压；.json → 单文件插件
+/// 按内容安装插件包：zip（PK 魔数）或单文件 JSON。
+/// 仅供「地址型来源」（Android content:// URI 等拿不到扩展名的场景）使用。
+fn install_from_bytes(app: &tauri::AppHandle, bytes: Vec<u8>) -> Result<PluginEntry, String> {
+    if bytes.starts_with(b"PK") {
+        return install_from_zip(app, &bytes);
+    }
+    if let Ok(text) = std::str::from_utf8(&bytes) {
+        if let Ok(entry) = install_from_single_json(app, text) {
+            return Ok(entry);
+        }
+    }
+    Err("无法识别的插件包：应为 .zip 压缩包或单文件 .json 插件".into())
+}
+
+/// 读取选择器返回的文件地址。
+/// Android 的 `ACTION_GET_CONTENT` 返回的是 `content://` URI（不是文件系统路径），
+/// 必须交给 fs 插件通过 ContentResolver 解析后读取。
+fn read_selected_file(app: &tauri::AppHandle, src: &str) -> Result<Vec<u8>, String> {
+    use std::str::FromStr;
+    use tauri_plugin_fs::FsExt;
+
+    let path =
+        tauri_plugin_fs::FilePath::from_str(src).map_err(|_| format!("无法解析文件地址: {src}"))?;
+    app.fs()
+        .read(path)
+        .map_err(|e| format!("读取所选文件失败: {e}"))
+}
+
+/// 从本地路径安装：目录 → 直接复制；.zip → 解压；.json → 单文件插件。
+/// Android 上选择器给出的是 `content://`（iOS 为 `file://`）URI，改为按内容安装。
 #[tauri::command]
 pub fn plugin_install_from_path(app: tauri::AppHandle, src: String) -> Result<PluginEntry, String> {
+    if src.starts_with("content://") || src.starts_with("file://") {
+        let bytes = read_selected_file(&app, &src)?;
+        return install_from_bytes(&app, bytes);
+    }
+
     let src_path = PathBuf::from(&src);
     if src_path.is_dir() {
         let manifest = read_manifest(&src_path)?;

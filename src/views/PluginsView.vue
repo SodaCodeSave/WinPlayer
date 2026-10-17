@@ -5,7 +5,8 @@ import QRCode from "qrcode";
 import { usePluginsStore, type PluginRecord } from "@/stores/plugins";
 import { toast } from "@/services/toast";
 import EmptyState from "@/components/common/EmptyState.vue";
-import { ComboBox, ContentDialog, NumberBox, PasswordBox, TextBox, ToggleSwitch } from "winuionweb";
+import { useIsMobile } from "@/composables/useIsMobile";
+import { ComboBox, ContentDialog, NumberBox, TextBox, ToggleSwitch } from "winuionweb";
 import type {
   LoginPollResult,
   LoginProfile,
@@ -15,6 +16,7 @@ import type {
 } from "@/types/plugin";
 
 const plugins = usePluginsStore();
+const isMobile = useIsMobile();
 
 const tab = ref<"installed" | "market">("installed");
 const urlValue = ref("");
@@ -435,7 +437,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="wp-page">
+  <div class="wp-page plugins-page" :class="{ mobile: isMobile }">
     <div class="wp-page-header">
       <h1 class="wp-page-title">插件管理</h1>
       <span class="page-sub">已安装 {{ installedCount }} 个</span>
@@ -569,12 +571,13 @@ onUnmounted(() => {
                 :PlaceholderText="item.placeholder ?? ''"
                 @update:Text="setDraft(record, item, $event)"
               />
-              <PasswordBox
+              <!-- password 类型同样用普通输入框：凭证（如登录 Cookie）很长，需要可见以便核对粘贴内容 -->
+              <TextBox
                 v-else-if="item.type === 'password'"
                 class="setting-control"
-                :Password="String(draftValue(record, item))"
+                :Text="String(draftValue(record, item))"
                 :PlaceholderText="item.placeholder ?? ''"
-                @update:Password="setDraft(record, item, $event)"
+                @update:Text="setDraft(record, item, $event)"
               />
               <NumberBox
                 v-else-if="item.type === 'number'"
@@ -1073,5 +1076,74 @@ onUnmounted(() => {
 .dialog-hint {
   font-size: 12px;
   color: var(--wp-text-tertiary);
+}
+
+/* ------------------------------ 移动端布局 ------------------------------ */
+
+/* 顶部标签与安装操作：窄屏放不下时换行，操作按钮独占一行置顶 */
+.plugins-page.mobile .tabs {
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.plugins-page.mobile .tab-actions {
+  order: -1;
+  width: 100%;
+  margin-left: 0;
+}
+
+.plugins-page.mobile .tab {
+  padding: var(--space-md) var(--space-lg);
+}
+
+/* 卡片由「主信息 + 操作」两列改为单列纵向堆叠 */
+.plugins-page.mobile .plugin-card {
+  grid-template-columns: 1fr;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+}
+
+.plugins-page.mobile .plugin-title-row,
+.plugins-page.mobile .plugin-meta {
+  flex-wrap: wrap;
+}
+
+/* 操作区（开关 + 卸载）铺满一行：开关靠左、卸载靠右 */
+.plugins-page.mobile .plugin-side {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 扫码登录区：空间不足时允许换行 */
+.plugins-page.mobile .plugin-login {
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+}
+
+/* 设置项：说明文字独占一行，输入控件另起一行铺满整行 */
+.plugins-page.mobile .setting-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-md);
+}
+
+/* 纵排后取消 flex:1（其 flex-basis:0 会让文字行在容器内塌陷） */
+.plugins-page.mobile .setting-label {
+  flex: none;
+}
+
+.plugins-page.mobile .setting-control {
+  width: 100%;
+}
+
+/* 市场卡片：单列（minmax(300px, 1fr) 在窄屏会撑出横向滚动） */
+.plugins-page.mobile .market-grid {
+  grid-template-columns: 1fr;
+}
+
+.plugins-page.mobile .market-foot {
+  flex-wrap: wrap;
+  row-gap: var(--space-sm);
 }
 </style>
