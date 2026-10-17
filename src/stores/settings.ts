@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getSetting, setSetting } from "@/services/db";
 import { getAudioEngine } from "@/services/audio";
 import { clearDataCache } from "@/services/cache";
+import { applyWindowMaterial, type WindowMaterial } from "@/services/windowMaterial";
 import {
   EQ_CUSTOM_PRESET_ID,
   EQ_PRESETS,
@@ -53,6 +54,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const eqGains = ref<number[]>([...FLAT_GAINS]);
   /** 全局字体（CSS font-family 值，空串 = 使用默认字体） */
   const fontFamily = ref("");
+  /** 窗口材质：Mica / Acrylic / 关闭（仅 Windows 桌面生效，其余平台 no-op） */
+  const windowMaterial = ref<WindowMaterial>("mica");
+  /** 是否跟随当前播放封面提取主色作为应用强调色 */
+  const coverAccent = ref(false);
   /** 缓存项策略：歌单（页面数据）/ 图片缓存开关组合 */
   const cachePolicy = ref<CachePolicy>("both");
   /** 是否在启动时自动检查更新 */
@@ -117,6 +122,8 @@ export const useSettingsStore = defineStore("settings", () => {
     eqPreset.value = await getSetting<string>("settings.eqPreset", "flat");
     eqGains.value = await getSetting<number[]>("settings.eqGains", [...FLAT_GAINS]);
     fontFamily.value = await getSetting<string>("settings.fontFamily", "");
+    windowMaterial.value = await getSetting<WindowMaterial>("settings.windowMaterial", "mica");
+    coverAccent.value = await getSetting<boolean>("settings.coverAccent", false);
     cachePolicy.value = await getSetting<CachePolicy>("settings.cachePolicy", "both");
     autoCheckUpdate.value = await getSetting<boolean>("settings.autoCheckUpdate", true);
     updateCheckFrequency.value = await getSetting<UpdateCheckFrequency>(
@@ -131,6 +138,8 @@ export const useSettingsStore = defineStore("settings", () => {
     lastUpdateCheckAt.value = await getSetting<number>("settings.lastUpdateCheckAt", 0);
     applyTheme();
     applyFont();
+    // 窗口材质按持久化偏好应用（仅 Windows 桌面实际生效）
+    void applyWindowMaterial(windowMaterial.value);
     // 启动时把均衡器配置应用到原生引擎
     applyEq();
     loaded.value = true;
@@ -146,6 +155,17 @@ export const useSettingsStore = defineStore("settings", () => {
     fontFamily.value = value;
     applyFont();
     await setSetting("settings.fontFamily", value);
+  }
+
+  async function setWindowMaterial(value: WindowMaterial): Promise<void> {
+    windowMaterial.value = value;
+    await applyWindowMaterial(value);
+    await setSetting("settings.windowMaterial", value);
+  }
+
+  async function setCoverAccent(value: boolean): Promise<void> {
+    coverAccent.value = value;
+    await setSetting("settings.coverAccent", value);
   }
 
   async function setMarketSources(value: MarketSource[]): Promise<void> {
@@ -264,6 +284,8 @@ export const useSettingsStore = defineStore("settings", () => {
   return {
     theme,
     fontFamily,
+    windowMaterial,
+    coverAccent,
     marketSources,
     githubMirror,
     smtcEnabled,
@@ -285,6 +307,8 @@ export const useSettingsStore = defineStore("settings", () => {
     load,
     setTheme,
     setFontFamily,
+    setWindowMaterial,
+    setCoverAccent,
     setMarketSources,
     setGithubMirror,
     setSmtcEnabled,

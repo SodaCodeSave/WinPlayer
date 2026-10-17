@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { ComboBox, TextBox } from "winuionweb";
+import { ComboBox, TextBox, ToggleSwitch } from "winuionweb";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings";
+import { useIsWindows } from "@/composables/useIsMobile";
+import type { WindowMaterial } from "@/services/windowMaterial";
 
 const settings = useSettingsStore();
+// 窗口材质仅 Windows 桌面端有意义，其他平台隐藏该设置项
+const isWindows = useIsWindows();
 
 /* ------------------------------ 主题 ------------------------------ */
 
@@ -27,6 +31,32 @@ function onThemeChange(_sender: unknown, payload?: { AddedItems?: unknown[] }): 
   const label = String(payload?.AddedItems?.[0] ?? "");
   const option = THEME_OPTIONS.find((entry) => entry.label === label);
   if (option && option.value !== settings.theme) void settings.setTheme(option.value);
+}
+
+/* ------------------------------ 窗口材质 ------------------------------ */
+
+const MATERIAL_OPTIONS: Array<{ label: string; value: WindowMaterial }> = [
+  { label: "Mica（推荐）", value: "mica" },
+  { label: "Acrylic", value: "acrylic" },
+  { label: "关闭", value: "off" },
+];
+
+const materialLabels = MATERIAL_OPTIONS.map((option) => option.label);
+
+const materialIndex = computed(() =>
+  MATERIAL_OPTIONS.findIndex((option) => option.value === settings.windowMaterial),
+);
+
+function onMaterialChange(_sender: unknown, payload?: { AddedItems?: unknown[] }): void {
+  const label = String(payload?.AddedItems?.[0] ?? "");
+  const option = MATERIAL_OPTIONS.find((entry) => entry.label === label);
+  if (option && option.value !== settings.windowMaterial) {
+    void settings.setWindowMaterial(option.value);
+  }
+}
+
+function onCoverAccentToggle(event: { IsOn: boolean }): void {
+  void settings.setCoverAccent(Boolean(event?.IsOn));
 }
 
 /* ------------------------------ 全局字体 ------------------------------ */
@@ -78,6 +108,30 @@ onBeforeUnmount(() => window.clearTimeout(fontDebounce));
           :SelectedIndex="themeIndex"
           @SelectionChanged="onThemeChange"
         />
+      </div>
+      <div v-if="isWindows" class="settings-card">
+        <div class="card-content">
+          <div class="card-header">窗口材质</div>
+          <div class="card-description">
+            使用系统级 Mica / Acrylic 云母材质作为窗口背景（Mica 仅 Windows 11
+            支持，自动回退 Acrylic）；关闭则使用不透明纯色背景
+          </div>
+        </div>
+        <ComboBox
+          class="card-control"
+          :ItemsSource="materialLabels"
+          :SelectedIndex="materialIndex"
+          @SelectionChanged="onMaterialChange"
+        />
+      </div>
+      <div class="settings-card">
+        <div class="card-content">
+          <div class="card-header">封面取色</div>
+          <div class="card-description">
+            从当前播放封面的主色生成应用强调色，按钮、进度条等高亮元素跟随封面变化
+          </div>
+        </div>
+        <ToggleSwitch :IsOn="settings.coverAccent" @Toggled="onCoverAccentToggle" />
       </div>
     </section>
 

@@ -51,6 +51,8 @@ windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_System_WinRT",
 ] }
+# 桌面窗口材质（Mica / Acrylic）：调 DWM 系统背板 / 合成属性
+window-vibrancy = "0.6"
 
 # 以下特性只在测试（SMTC 冒烟测试）里用到
 [target.'cfg(windows)'.dev-dependencies]

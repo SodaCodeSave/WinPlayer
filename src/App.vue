@@ -20,6 +20,7 @@ import { usePlayerStore } from "@/stores/player";
 import { useShortcutsStore } from "@/stores/shortcuts";
 import { useUpdaterStore } from "@/stores/updater";
 import { disposeSmtc, initSmtc, setSmtcEnabled } from "@/services/smtc";
+import { refreshAccentFromCover } from "@/services/coverAccent";
 
 const settings = useSettingsStore();
 const plugins = usePluginsStore();
@@ -36,6 +37,12 @@ const stopSmtcWatch = watch(
   { immediate: true },
 );
 
+// 跟随封面取色（可在设置中开关）：封面 / 开关 / 主题变化时重新提取强调色
+const stopAccentWatch = watch(
+  [() => player.currentTrack?.cover, () => settings.coverAccent, () => settings.theme],
+  ([cover, enabled]) => void refreshAccentFromCover(cover, enabled),
+);
+
 onMounted(async () => {
   await settings.load();
   await Promise.all([library.loadAll(), player.restore(), shortcuts.load()]);
@@ -49,6 +56,7 @@ onUnmounted(() => {
   plugins.disposeAll();
   updater.dispose();
   stopSmtcWatch();
+  stopAccentWatch();
   disposeSmtc();
 });
 </script>

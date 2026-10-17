@@ -47,6 +47,7 @@ pub fn run() {
                 commands::plugins::plugin_storage_get,
                 commands::plugins::plugin_storage_set,
                 commands::smtc::smtc_sync,
+                commands::window::window_set_material,
                 updater::updater_platform,
                 updater::updater_check,
                 updater::updater_download,

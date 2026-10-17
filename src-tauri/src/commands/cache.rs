@@ -327,3 +327,107 @@ pub fn cover_cache_path(app: tauri::AppHandle, url: String) -> Option<String> {
     }
     tauri::Url::from_file_path(path).ok().map(|uri| uri.to_string())
 }
+
+/// 提取封面主色（跟随封面的动态强调色用）：仅查磁盘缓存、**不联网下载**——
+/// 封面在界面上展示时已由 cachedimg 协议落盘，取色紧跟其后，缓存基本必命中；
+/// 未命中（如刚切歌还没下完）返回 null，前端保持上一次强调色。
+/// 返回 "#rrggbb"。
+#[tauri::command]
+pub async fn cover_dominant_color(app: tauri::AppHandle, url: String) -> Option<String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return None;
+    }
+    let path = image_path(&app, &url).ok()?;
+    let bytes = tokio::fs::read(path).await.ok()?;
+    // 解码取色是 CPU 操作，放阻塞线程池避免卡异步运行时
+    tokio::task::spawn_blocking(move || dominant_color_hex(&bytes))
+        .await
+        .ok()?
+}
+
+/// 饱和度加权主色提取：跳过近黑/近白/低饱和像素避免被背景色淹没，
+/// 再把结果的亮度规整到可读区间，保证亮/暗主题下作为强调色都可用
+fn dominant_color_hex(bytes: &[u8]) -> Option<String> {
+    let img = image::load_from_memory(bytes).ok()?;
+    let img = img.thumbnail(48, 48).to_rgb8();
+
+    let mut sum = [0f32; 3];
+    let mut total = 0f32;
+    let mut plain_sum = [0f32; 3];
+    let mut plain_total = 0f32;
+    for px in img.pixels() {
+        let [r, g, b] = px.0.map(f32::from);
+        plain_sum[0] += r;
+        plain_sum[1] += g;
+        plain_sum[2] += b;
+        plain_total += 1.0;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let sat = if max > 0.0 { (max - min) / max } else { 0.0 };
+        let val = max / 255.0;
+        // 跳过近黑、近白与低饱和像素；越鲜艳权重越高，亮度适中再加权
+        if val < 0.06 || val > 0.97 || sat < 0.18 {
+            continue;
+        }
+        let w = sat * sat * (1.0 - (val - 0.55).abs());
+        sum[0] += r * w;
+        sum[1] += g * w;
+        sum[2] += b * w;
+        total += w;
+    }
+
+    let (r, g, b) = if total > 0.0 {
+        (sum[0] / total, sum[1] / total, sum[2] / total)
+    } else {
+        (
+            plain_sum[0] / plain_total,
+            plain_sum[1] / plain_total,
+            plain_sum[2] / plain_total,
+        )
+    };
+
+    // 规整饱和度与亮度：全灰封面给一点淡色，亮度钳到 [0.45, 0.72] 避免刺眼或不可读
+    let (_, s, v) = rgb_to_hsv(r, g, b);
+    let s = if total > 0.0 { s.clamp(0.45, 0.9) } else { 0.35 };
+    let v = v.clamp(0.45, 0.72);
+    let (r, g, b) = hsv_to_rgb(rgb_to_hsv(r, g, b).0, s, v);
+    Some(format!("#{:02x}{:02x}{:02x}", r, g, b))
+}
+
+/// RGB（0-255）→ HSV（h 0-360 / s、v 0-1）
+fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let d = max - min;
+    let h = if d == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    let s = if max <= 0.0 { 0.0 } else { d / max };
+    (h, s, max / 255.0)
+}
+
+/// HSV（h 0-360 / s、v 0-1）→ RGB（0-255）
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match h as u32 / 60 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    (
+        ((r + m) * 255.0).round() as u8,
+        ((g + m) * 255.0).round() as u8,
+        ((b + m) * 255.0).round() as u8,
+    )
+}
