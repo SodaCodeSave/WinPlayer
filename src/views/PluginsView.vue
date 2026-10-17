@@ -559,7 +559,12 @@ onUnmounted(() => {
 
           <!-- 插件设置表单 -->
           <div v-if="record.entry.manifest.settings?.length" class="plugin-settings">
-            <div v-for="item in record.entry.manifest.settings" :key="item.key" class="setting-row">
+            <div
+              v-for="item in record.entry.manifest.settings"
+              :key="item.key"
+              class="setting-row"
+              :class="{ stacked: item.type === 'password' }"
+            >
               <div class="setting-label">
                 <div class="setting-name">{{ item.label }}</div>
                 <div v-if="item.description" class="setting-desc">{{ item.description }}</div>
@@ -947,6 +952,26 @@ onUnmounted(() => {
   gap: var(--space-xl);
 }
 
+/**
+ * 凭证类设置（如登录 Cookie）：说明文字独占一行，输入框另起一行。
+ * 输入控件的 min-width 会随内容长度增长（长 Cookie 可达数百 px），横排时会把说明文字挤到 0 宽
+ */
+.setting-row.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-md);
+}
+
+/* 纵排后取消 flex:1（其 flex-basis:0 会让文字行在容器内塌陷） */
+.setting-row.stacked .setting-label {
+  flex: none;
+}
+
+.setting-row.stacked .setting-control {
+  width: 100%;
+  max-width: 100%;
+}
+
 .setting-label {
   flex: 1;
   min-width: 0;
@@ -965,6 +990,8 @@ onUnmounted(() => {
 
 .setting-control {
   width: 280px;
+  /* 控件自身的 min-width 会随内容长度增长，用 max-width 兜底，避免长值把左侧说明文字挤没 */
+  max-width: 280px;
   flex: none;
 }
 
@@ -1135,6 +1162,7 @@ onUnmounted(() => {
 
 .plugins-page.mobile .setting-control {
   width: 100%;
+  max-width: 100%;
 }
 
 /* 市场卡片：单列（minmax(300px, 1fr) 在窄屏会撑出横向滚动） */
